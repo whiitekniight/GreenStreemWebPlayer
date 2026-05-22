@@ -55,6 +55,7 @@ const state = {
   hls: null,
   mpegts: null,
   playbackVideo: null,
+  fullscreenControlsTimer: null,
   activeChannel: null,
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
@@ -374,6 +375,7 @@ function openFullscreenPlayer(item) {
   els.fullscreenStatus.textContent = "Loading movie...";
   els.fullscreenPlayer.classList.remove("is-hidden");
   els.fullscreenPlayer.focus();
+  showFullscreenControls();
 
   const requestFullscreen = els.fullscreenPlayer.requestFullscreen?.bind(els.fullscreenPlayer);
   if (requestFullscreen) {
@@ -383,14 +385,26 @@ function openFullscreenPlayer(item) {
 
 function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   if (!isFullscreenPlayerOpen()) return;
+  window.clearTimeout(state.fullscreenControlsTimer);
+  state.fullscreenControlsTimer = null;
   clearPlayer();
   els.fullscreenPlayer.classList.add("is-hidden");
+  els.fullscreenPlayer.classList.remove("is-controls-visible");
   state.playbackVideo = els.videoPlayer;
   els.fullscreenStatus.textContent = "Loading...";
 
   if (exitFullscreen && document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
+}
+
+function showFullscreenControls() {
+  if (!isFullscreenPlayerOpen()) return;
+  els.fullscreenPlayer.classList.add("is-controls-visible");
+  window.clearTimeout(state.fullscreenControlsTimer);
+  state.fullscreenControlsTimer = window.setTimeout(() => {
+    els.fullscreenPlayer.classList.remove("is-controls-visible");
+  }, 1800);
 }
 
 function playLibraryItem(item) {
@@ -922,6 +936,9 @@ els.playItemButton.addEventListener("click", () => {
     playLibraryItem(state.selectedLibraryItem);
   }
 });
+els.fullscreenPlayer.addEventListener("mousemove", showFullscreenControls);
+els.fullscreenPlayer.addEventListener("pointerdown", showFullscreenControls);
+els.fullscreenPlayer.addEventListener("focusin", showFullscreenControls);
 els.closeFullscreenPlayerButton.addEventListener("click", () => closeFullscreenPlayer());
 
 els.searchButton.addEventListener("click", () => {
