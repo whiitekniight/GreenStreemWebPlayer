@@ -552,6 +552,61 @@ video {
   line-height: 1.5;
 }
 
+.fullscreen-player {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  background: #000;
+}
+
+.fullscreen-player video {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+}
+
+.fullscreen-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.82), transparent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.fullscreen-player:hover .fullscreen-topbar,
+.fullscreen-player:focus-within .fullscreen-topbar {
+  opacity: 1;
+}
+
+.fullscreen-topbar strong,
+.fullscreen-topbar span {
+  display: block;
+}
+
+.fullscreen-topbar span {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.fullscreen-status {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  color: var(--green);
+  background: rgba(0, 0, 0, 0.62);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 .placeholder-view {
   text-align: center;
 }

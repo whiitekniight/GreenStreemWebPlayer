@@ -230,6 +230,17 @@
           </div>
         </div>
       </div>
+      <div id="fullscreenPlayer" class="fullscreen-player is-hidden" tabindex="-1">
+        <video id="fullscreenVideoPlayer" controls autoplay playsinline></video>
+        <div class="fullscreen-topbar">
+          <div>
+            <strong id="fullscreenTitle">Now Playing</strong>
+            <span id="fullscreenMeta">Movie</span>
+          </div>
+          <button id="closeFullscreenPlayerButton" class="icon-button" type="button" title="Close">X</button>
+        </div>
+        <div id="fullscreenStatus" class="fullscreen-status">Loading...</div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>

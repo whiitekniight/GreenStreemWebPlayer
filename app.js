@@ -54,6 +54,7 @@ const state = {
   favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
   hls: null,
   mpegts: null,
+  playbackVideo: null,
   activeChannel: null,
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
@@ -91,6 +92,12 @@ const els = {
   nextTitle: document.querySelector("#nextTitle"),
   nowTime: document.querySelector("#nowTime"),
   videoPlayer: document.querySelector("#videoPlayer"),
+  fullscreenPlayer: document.querySelector("#fullscreenPlayer"),
+  fullscreenVideoPlayer: document.querySelector("#fullscreenVideoPlayer"),
+  fullscreenTitle: document.querySelector("#fullscreenTitle"),
+  fullscreenMeta: document.querySelector("#fullscreenMeta"),
+  fullscreenStatus: document.querySelector("#fullscreenStatus"),
+  closeFullscreenPlayerButton: document.querySelector("#closeFullscreenPlayerButton"),
   categoryDrawer: document.querySelector("#categoryDrawer"),
   drawerScrim: document.querySelector("#drawerScrim"),
   openCategoriesButton: document.querySelector("#openCategoriesButton"),
@@ -343,6 +350,49 @@ function closeItemDetails() {
   els.itemModal.classList.add("is-hidden");
 }
 
+function activeVideo() {
+  return state.playbackVideo || els.videoPlayer;
+}
+
+function isFullscreenPlayerOpen() {
+  return !els.fullscreenPlayer.classList.contains("is-hidden");
+}
+
+function setPlaybackStatus(message) {
+  if (isFullscreenPlayerOpen()) {
+    els.fullscreenStatus.textContent = message;
+  } else {
+    els.nowTime.textContent = message;
+  }
+}
+
+function openFullscreenPlayer(item) {
+  const meta = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
+  state.playbackVideo = els.fullscreenVideoPlayer;
+  els.fullscreenTitle.textContent = item.title;
+  els.fullscreenMeta.textContent = meta;
+  els.fullscreenStatus.textContent = "Loading movie...";
+  els.fullscreenPlayer.classList.remove("is-hidden");
+  els.fullscreenPlayer.focus();
+
+  const requestFullscreen = els.fullscreenPlayer.requestFullscreen?.bind(els.fullscreenPlayer);
+  if (requestFullscreen) {
+    requestFullscreen().catch(() => {});
+  }
+}
+
+function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
+  if (!isFullscreenPlayerOpen()) return;
+  clearPlayer();
+  els.fullscreenPlayer.classList.add("is-hidden");
+  state.playbackVideo = els.videoPlayer;
+  els.fullscreenStatus.textContent = "Loading...";
+
+  if (exitFullscreen && document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
 function playLibraryItem(item) {
   if (item.type !== "movies") {
     els.libraryStatus.textContent = "Series episode browsing is next.";
@@ -356,10 +406,9 @@ function playLibraryItem(item) {
   els.currentChannelTitle.textContent = item.title;
   els.nowTitle.textContent = item.title;
   els.nextTitle.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
-  els.nowTime.textContent = "Loading movie...";
-  showSection("live");
-  loadStream(playUrl, item.container === "m3u8" ? "hls" : "file");
   closeItemDetails();
+  openFullscreenPlayer(item);
+  loadStream(playUrl, item.container === "m3u8" ? "hls" : "file");
 }
 
 function setLoginMode(mode) {
@@ -491,6 +540,7 @@ function renderChannels() {
 
 function playChannel(index) {
   const channel = state.channels[index];
+  state.playbackVideo = els.videoPlayer;
   state.activeChannelIndex = index;
   els.currentChannelTitle.textContent = channel.name;
   els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
@@ -532,54 +582,57 @@ function clearPlayer() {
     state.mpegts.destroy();
     state.mpegts = null;
   }
-  els.videoPlayer.pause();
-  els.videoPlayer.removeAttribute("src");
-  els.videoPlayer.load();
+  [els.videoPlayer, els.fullscreenVideoPlayer].forEach((video) => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  });
 }
 
 function loadStream(playUrl, streamType) {
   clearPlayer();
+  const video = activeVideo();
   const looksLikeHls = streamType === "hls" || /\.m3u8($|\?)/i.test(playUrl);
 
   if (looksLikeHls && window.Hls && window.Hls.isSupported()) {
     state.hls = new Hls({ lowLatencyMode: true });
     state.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-      els.nowTime.textContent = "Opening HLS stream...";
+      setPlaybackStatus("Opening HLS stream...");
     });
     state.hls.on(Hls.Events.ERROR, (_event, data) => {
-      els.nowTime.textContent = `Stream issue: ${data.details || data.type}`;
+      setPlaybackStatus(`Stream issue: ${data.details || data.type}`);
       showLatestDiagnostics(data.details || data.type);
       if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && tryFallbackStream(data.details)) {
         return;
       }
       if (data.fatal) {
         if (tryFallbackStream(data.details || data.type)) return;
-        els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
+        setPlaybackStatus(`Playback failed: ${data.details || data.type}`);
         state.hls.destroy();
         state.hls = null;
       }
     });
     state.hls.on(Hls.Events.LEVEL_LOADED, () => {
-      els.nowTime.textContent = "HLS playlist loaded. Fetching video segments...";
+      setPlaybackStatus("HLS playlist loaded. Fetching video segments...");
     });
     state.hls.on(Hls.Events.FRAG_LOADED, () => {
-      els.nowTime.textContent = "Video segment loaded. Buffering...";
+      setPlaybackStatus("Video segment loaded. Buffering...");
     });
     state.hls.on(Hls.Events.BUFFER_APPENDED, () => {
-      els.nowTime.textContent = "Video buffered. Starting playback...";
+      setPlaybackStatus("Video buffered. Starting playback...");
     });
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      els.nowTime.textContent = "HLS stream ready.";
+      setPlaybackStatus("HLS stream ready.");
       attemptPlay();
     });
     state.hls.loadSource(playUrl);
-    state.hls.attachMedia(els.videoPlayer);
+    state.hls.attachMedia(video);
     return;
   }
 
-  if (looksLikeHls && els.videoPlayer.canPlayType("application/vnd.apple.mpegurl")) {
-    els.videoPlayer.src = playUrl;
-    els.nowTime.textContent = "Native HLS stream ready.";
+  if (looksLikeHls && video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = playUrl;
+    setPlaybackStatus("Native HLS stream ready.");
     attemptPlay();
     return;
   }
@@ -592,20 +645,20 @@ function loadStream(playUrl, streamType) {
       url: playUrl,
     });
     state.mpegts.on(mpegts.Events.ERROR, (_type, detail) => {
-      els.nowTime.textContent = `TS playback failed: ${detail || "stream error"}`;
+      setPlaybackStatus(`TS playback failed: ${detail || "stream error"}`);
       showLatestDiagnostics(detail || "mpegts error");
     });
-    state.mpegts.attachMediaElement(els.videoPlayer);
+    state.mpegts.attachMediaElement(video);
     state.mpegts.load();
-    els.nowTime.textContent = fallbackTrial ? "Trying direct TS stream fallback..." : "Opening TS stream...";
+    setPlaybackStatus(fallbackTrial ? "Trying direct TS stream fallback..." : "Opening TS stream...");
     attemptPlay();
     return;
   }
 
-  els.videoPlayer.src = playUrl;
-  els.nowTime.textContent = looksLikeHls
+  video.src = playUrl;
+  setPlaybackStatus(looksLikeHls
     ? "HLS helper did not load. Refresh the page and try again."
-    : "Trying direct stream playback. Some .ts streams need conversion.";
+    : "Trying direct stream playback. Some .ts streams need conversion.");
   attemptPlay();
 }
 
@@ -615,7 +668,7 @@ function tryFallbackStream(reason) {
 
   state.triedFallback = true;
   state.pendingTsPreference = true;
-  els.nowTime.textContent = `${reason}. Trying TS fallback...`;
+  setPlaybackStatus(`${reason}. Trying TS fallback...`);
   if (state.hls) {
     state.hls.destroy();
     state.hls = null;
@@ -625,39 +678,44 @@ function tryFallbackStream(reason) {
 }
 
 function attemptPlay() {
-  els.videoPlayer.play().catch(() => {
-    els.nowTime.textContent = "Stream loaded. Press play in the video window.";
+  activeVideo().play().catch(() => {
+    setPlaybackStatus("Stream loaded. Press play in the video window.");
   });
 }
 
-els.videoPlayer.addEventListener("playing", () => {
-  if (state.pendingTsPreference && state.activeChannel?.fallbackStreamType === "mpegts") {
-    state.preferredLiveStreamType = "mpegts";
-    localStorage.setItem("greenstreem:preferredLiveStreamType", "mpegts");
-    state.pendingTsPreference = false;
-  }
-  els.nowTime.textContent = "Playing.";
-});
+function attachVideoEvents(video) {
+  video.addEventListener("playing", () => {
+    if (state.pendingTsPreference && state.activeChannel?.fallbackStreamType === "mpegts") {
+      state.preferredLiveStreamType = "mpegts";
+      localStorage.setItem("greenstreem:preferredLiveStreamType", "mpegts");
+      state.pendingTsPreference = false;
+    }
+    setPlaybackStatus("Playing.");
+  });
 
-els.videoPlayer.addEventListener("waiting", () => {
-  els.nowTime.textContent = "Buffering video...";
-});
+  video.addEventListener("waiting", () => {
+    setPlaybackStatus("Buffering video...");
+  });
 
-els.videoPlayer.addEventListener("stalled", () => {
-  els.nowTime.textContent = "Stream stalled while loading video data.";
-});
+  video.addEventListener("stalled", () => {
+    setPlaybackStatus("Stream stalled while loading video data.");
+  });
 
-els.videoPlayer.addEventListener("error", () => {
-  const error = els.videoPlayer.error;
-  const message =
-    error?.code === MediaError.MEDIA_ERR_DECODE
-      ? "Video codec is not supported by this browser."
-      : error?.code === MediaError.MEDIA_ERR_NETWORK
-        ? "Network error while loading stream."
-        : "Browser could not play this stream.";
-  els.nowTime.textContent = message;
-  showLatestDiagnostics(message);
-});
+  video.addEventListener("error", () => {
+    const error = video.error;
+    const message =
+      error?.code === MediaError.MEDIA_ERR_DECODE
+        ? "Video codec is not supported by this browser."
+        : error?.code === MediaError.MEDIA_ERR_NETWORK
+          ? "Network error while loading stream."
+          : "Browser could not play this stream.";
+    setPlaybackStatus(message);
+    showLatestDiagnostics(message);
+  });
+}
+
+attachVideoEvents(els.videoPlayer);
+attachVideoEvents(els.fullscreenVideoPlayer);
 
 async function showLatestDiagnostics(prefix) {
   if (!state.sessionId || !apiAvailable) return;
@@ -675,7 +733,7 @@ async function showLatestDiagnostics(prefix) {
       latest.host ? `from ${latest.host}` : "",
       latest.type ? latest.type : "",
     ].filter(Boolean);
-    els.nowTime.textContent = bits.join(" · ");
+    setPlaybackStatus(bits.join(" · "));
   } catch {
     // Diagnostics are helpful but should never interrupt playback.
   }
@@ -864,6 +922,7 @@ els.playItemButton.addEventListener("click", () => {
     playLibraryItem(state.selectedLibraryItem);
   }
 });
+els.closeFullscreenPlayerButton.addEventListener("click", () => closeFullscreenPlayer());
 
 els.searchButton.addEventListener("click", () => {
   showSection("live");
@@ -924,6 +983,18 @@ els.logoutButton.addEventListener("click", () => {
 els.fullscreenButton.addEventListener("click", () => {
   if (els.videoPlayer.requestFullscreen) {
     els.videoPlayer.requestFullscreen();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && isFullscreenPlayerOpen()) {
+    closeFullscreenPlayer();
+  }
+});
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && isFullscreenPlayerOpen()) {
+    closeFullscreenPlayer({ exitFullscreen: false });
   }
 });
 
