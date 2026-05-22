@@ -356,8 +356,34 @@ video {
   object-fit: contain;
 }
 
+.channel-info,
+.channel-name,
+.channel-program,
+.channel-next {
+  min-width: 0;
+}
+
+.channel-info {
+  display: grid;
+  gap: 5px;
+}
+
 .channel-name {
   font-weight: 800;
+}
+
+.channel-program,
+.channel-next {
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-row.is-active .channel-program,
+.channel-row.is-active .channel-next {
+  color: #4b5a5f;
 }
 
 .favorite-button {

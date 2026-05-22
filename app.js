@@ -59,6 +59,8 @@ const state = {
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
   pendingTsPreference: false,
   account: {},
+  guide: {},
+  guidePollTimer: null,
 };
 
 const els = {
@@ -150,10 +152,10 @@ function renderAccountSettings() {
       ? `${state.account.activeConnections || "0"} / ${state.account.maxConnections || "Unknown"}`
       : "Unknown";
   els.accountPlaybackMode.textContent = state.preferredLiveStreamType === "mpegts" ? "TS First" : "Auto";
-  els.accountGuideCount.textContent = String(matchedGuideCount);
-  els.accountGuideStatus.textContent = matchedGuideCount
-    ? `${matchedGuideCount} channels have current guide data.`
-    : "Guide data has not matched any channels yet.";
+  els.accountGuideCount.textContent = String(state.guide.matched ?? matchedGuideCount);
+  els.accountGuideStatus.textContent = state.guide.status || (
+    matchedGuideCount ? `${matchedGuideCount} channels have current guide data.` : "Guide data has not matched any channels yet."
+  );
 }
 
 function setLoginMode(mode) {
@@ -246,9 +248,22 @@ function renderChannels() {
       logo.setAttribute("aria-hidden", "true");
     }
 
+    const info = document.createElement("span");
+    info.className = "channel-info";
+
     const name = document.createElement("span");
     name.className = "channel-name";
     name.textContent = channel.name;
+
+    const program = document.createElement("span");
+    program.className = "channel-program";
+    program.textContent = channel.now && channel.now !== "EPG not connected yet" ? channel.now : "No guide information";
+
+    const next = document.createElement("span");
+    next.className = "channel-next";
+    next.textContent = channel.next || "";
+
+    info.append(name, program, next);
 
     const favorite = document.createElement("span");
     favorite.className = "favorite-button";
@@ -256,7 +271,7 @@ function renderChannels() {
     favorite.setAttribute("aria-label", "Favorite");
     favorite.textContent = "☆";
 
-    row.append(number, logo, name, favorite);
+    row.append(number, logo, info, favorite);
 
     row.addEventListener("click", (event) => {
       if (event.target.classList.contains("favorite-button")) {
@@ -510,6 +525,59 @@ function closeDrawer() {
   els.drawerScrim.classList.remove("is-open");
 }
 
+function updateActiveGuidePanel() {
+  if (state.activeChannelIndex < 0) return;
+  const channel = state.channels[state.activeChannelIndex];
+  if (!channel) return;
+  els.nowTitle.textContent = channel.now || "EPG not connected yet";
+  els.nextTitle.textContent = channel.next || "No upcoming program loaded.";
+}
+
+function stopGuidePolling() {
+  if (state.guidePollTimer) {
+    clearTimeout(state.guidePollTimer);
+    state.guidePollTimer = null;
+  }
+}
+
+async function refreshSessionData() {
+  if (!state.sessionId || !apiAvailable) return;
+
+  try {
+    const response = await fetch(`/api/session?session=${encodeURIComponent(state.sessionId)}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Session refresh failed.");
+
+    state.channels = result.channels.length ? result.channels : state.channels;
+    state.account = result.account || state.account;
+    state.guide = result.guide || state.guide;
+
+    if (state.section === "live") {
+      renderCategories();
+      renderChannels();
+    }
+    if (state.section === "account") {
+      renderAccountSettings();
+    }
+    updateActiveGuidePanel();
+
+    if (state.guide.loading) {
+      state.guidePollTimer = setTimeout(refreshSessionData, 1200);
+    } else {
+      state.guidePollTimer = null;
+    }
+  } catch {
+    state.guidePollTimer = null;
+  }
+}
+
+function startGuidePolling() {
+  stopGuidePolling();
+  if (state.guide?.loading) {
+    state.guidePollTimer = setTimeout(refreshSessionData, 700);
+  }
+}
+
 els.modeTabs.forEach((tab) => {
   tab.addEventListener("click", () => setLoginMode(tab.dataset.mode));
 });
@@ -552,11 +620,13 @@ els.loginForm.addEventListener("submit", async (event) => {
     state.sessionId = result.sessionId;
     state.channels = result.channels.length ? result.channels : [...demoChannels];
     state.account = result.account || {};
+    state.guide = result.guide || {};
     state.activeCategory = "All Channels";
     state.activeChannelIndex = -1;
     state.preferredLiveStreamType = localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto";
-    setStatus(`Loaded ${state.channels.length} channels.`);
+    setStatus(state.guide.loading ? `Loaded ${state.channels.length} channels. Guide is still loading...` : `Loaded ${state.channels.length} channels.`);
     showSection("home");
+    startGuidePolling();
   } catch (error) {
     setStatus(error.message || "Could not load the playlist.");
   }
@@ -617,8 +687,10 @@ els.clearFavoritesButton.addEventListener("click", () => {
 
 els.logoutButton.addEventListener("click", () => {
   clearPlayer();
+  stopGuidePolling();
   state.sessionId = "";
   state.account = {};
+  state.guide = {};
   state.channels = [...demoChannels];
   state.activeChannelIndex = -1;
   state.activeChannel = null;

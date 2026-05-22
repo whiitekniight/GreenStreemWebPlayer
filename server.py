@@ -14,6 +14,7 @@ import mimetypes
 import re
 import secrets
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -47,6 +48,9 @@ class Session:
     account: dict[str, str] = field(default_factory=dict)
     cookie_jar: http.cookiejar.CookieJar = field(default_factory=http.cookiejar.CookieJar)
     proxy_targets: dict[str, dict[str, str]] = field(default_factory=dict)
+    epg_loading: bool = False
+    epg_matched: int = 0
+    epg_status: str = "Guide not loaded"
 
 
 SESSIONS: dict[str, Session] = {}
@@ -324,6 +328,42 @@ def load_xtream_account(base_url: str, username: str, password: str) -> dict[str
     }
 
 
+def guide_info(session: Session) -> dict[str, Any]:
+    return {
+        "loading": session.epg_loading,
+        "matched": session.epg_matched,
+        "status": session.epg_status,
+    }
+
+
+def start_epg_load(session_id: str, epg_url: str) -> None:
+    session = SESSIONS.get(session_id)
+    if not session or not epg_url:
+        return
+
+    session.epg_loading = True
+    session.epg_status = "Loading guide data..."
+
+    def worker() -> None:
+        current_session = SESSIONS.get(session_id)
+        if not current_session:
+            return
+        try:
+            matched = apply_epg(current_session.channels, fetch_text(epg_url, limit=MAX_EPG_BYTES))
+            current_session.epg_matched = matched
+            current_session.epg_status = (
+                f"Guide matched {matched} channels." if matched else "Guide loaded but did not match channels."
+            )
+            record_diagnostic(session_id, "epg-loaded", details=current_session.epg_status)
+        except Exception as exc:
+            current_session.epg_status = f"Guide failed: {exc}"
+            record_diagnostic(session_id, "epg-error", details=str(exc))
+        finally:
+            current_session.epg_loading = False
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def safe_url_info(url: str) -> dict[str, str]:
     parsed = urlparse(url)
     path = parsed.path or ""
@@ -426,6 +466,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/diagnostics":
             self.handle_diagnostics(parsed.query)
             return
+        if parsed.path == "/api/session":
+            self.handle_session(parsed.query)
+            return
         self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -451,11 +494,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 SESSIONS[session_id] = session
                 session.channels = parse_m3u(fetch_text(m3u_url), session_id)
                 if epg_url:
-                    try:
-                        matched = apply_epg(session.channels, fetch_text(epg_url, limit=MAX_EPG_BYTES))
-                        record_diagnostic(session_id, "epg-loaded", details=f"matched {matched} channels")
-                    except Exception as exc:
-                        record_diagnostic(session_id, "epg-error", details=str(exc))
+                    start_epg_load(session_id, epg_url)
             elif mode == "xtream":
                 base_url = normalize_url(str(payload.get("serverUrl") or ""))
                 username = str(payload.get("username") or "").strip()
@@ -470,14 +509,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 SESSIONS[session_id] = session
                 session.account = load_xtream_account(base_url, username, password)
                 session.channels = load_xtream_channels(base_url, username, password, session_id)
-                try:
-                    matched = apply_epg(
-                        session.channels,
-                        fetch_text(xmltv_url(base_url, username, password), limit=MAX_EPG_BYTES),
-                    )
-                    record_diagnostic(session_id, "epg-loaded", details=f"matched {matched} channels")
-                except Exception as exc:
-                    record_diagnostic(session_id, "epg-error", details=str(exc))
+                start_epg_load(session_id, xmltv_url(base_url, username, password))
             else:
                 raise ValueError("Choose Xtream or M3U login.")
 
@@ -486,6 +518,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                     "sessionId": session_id,
                     "channels": public_channels(session.channels),
                     "account": session.account,
+                    "guide": guide_info(session),
                 }
             )
         except (HTTPError, URLError) as exc:
@@ -593,6 +626,22 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
         self.write_json({"events": DIAGNOSTICS.get(session_id, [])})
+
+    def handle_session(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        session = SESSIONS.get(session_id)
+        if not session:
+            self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
+            return
+
+        self.write_json(
+            {
+                "channels": public_channels(session.channels),
+                "account": session.account,
+                "guide": guide_info(session),
+            }
+        )
 
     def is_hls_playlist(self, url: str, content_type: str) -> bool:
         lower_type = content_type.lower()
