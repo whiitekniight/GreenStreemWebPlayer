@@ -53,6 +53,9 @@ const state = {
   favoritesOnly: false,
   favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
   hls: null,
+  mpegts: null,
+  activeChannel: null,
+  triedFallback: false,
 };
 
 const els = {
@@ -234,6 +237,8 @@ function playChannel(index) {
   const streamUrl = channel.playUrl || channel.url;
   const hasStream = channel.hasStream || Boolean(streamUrl);
   els.nowTime.textContent = hasStream ? "Loading stream..." : "Demo channel has no live stream URL yet.";
+  state.activeChannel = channel;
+  state.triedFallback = false;
 
   if (hasStream) {
     loadStream(streamUrl, channel.streamType || channel.url || "");
@@ -248,6 +253,10 @@ function clearPlayer() {
   if (state.hls) {
     state.hls.destroy();
     state.hls = null;
+  }
+  if (state.mpegts) {
+    state.mpegts.destroy();
+    state.mpegts = null;
   }
   els.videoPlayer.pause();
   els.videoPlayer.removeAttribute("src");
@@ -267,6 +276,7 @@ function loadStream(playUrl, streamType) {
       els.nowTime.textContent = `Stream issue: ${data.details || data.type}`;
       showLatestDiagnostics(data.details || data.type);
       if (data.fatal) {
+        if (tryFallbackStream(data.details || data.type)) return;
         els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
         state.hls.destroy();
         state.hls = null;
@@ -297,11 +307,42 @@ function loadStream(playUrl, streamType) {
     return;
   }
 
+  if (streamType === "mpegts" && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
+    state.mpegts = mpegts.createPlayer({
+      type: "mpegts",
+      isLive: true,
+      url: playUrl,
+    });
+    state.mpegts.on(mpegts.Events.ERROR, (_type, detail) => {
+      els.nowTime.textContent = `TS playback failed: ${detail || "stream error"}`;
+      showLatestDiagnostics(detail || "mpegts error");
+    });
+    state.mpegts.attachMediaElement(els.videoPlayer);
+    state.mpegts.load();
+    els.nowTime.textContent = "Trying direct TS stream fallback...";
+    attemptPlay();
+    return;
+  }
+
   els.videoPlayer.src = playUrl;
   els.nowTime.textContent = looksLikeHls
     ? "HLS helper did not load. Refresh the page and try again."
     : "Trying direct stream playback. Some .ts streams need conversion.";
   attemptPlay();
+}
+
+function tryFallbackStream(reason) {
+  const channel = state.activeChannel;
+  if (!channel || state.triedFallback || !channel.fallbackPlayUrl) return false;
+
+  state.triedFallback = true;
+  els.nowTime.textContent = `${reason}. Trying TS fallback...`;
+  if (state.hls) {
+    state.hls.destroy();
+    state.hls = null;
+  }
+  loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType || "mpegts");
+  return true;
 }
 
 function attemptPlay() {

@@ -159,6 +159,8 @@ def public_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "logo": channel.get("logo") or "",
                 "playUrl": channel.get("playUrl") or "",
                 "streamType": channel.get("streamType") or guess_stream_type(str(channel.get("url") or "")),
+                "fallbackPlayUrl": channel.get("fallbackPlayUrl") or "",
+                "fallbackStreamType": channel.get("fallbackStreamType") or "",
                 "hasStream": bool(channel.get("url")),
                 "now": channel.get("now") or "EPG not connected yet",
             }
@@ -225,7 +227,8 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
         if not stream_id:
             continue
 
-        stream_url = f"{base_url}/live/{quote(username)}/{quote(password)}/{quote(stream_id)}.m3u8"
+        hls_url = f"{base_url}/live/{quote(username)}/{quote(password)}/{quote(stream_id)}.m3u8"
+        ts_url = f"{base_url}/live/{quote(username)}/{quote(password)}/{quote(stream_id)}.ts"
         channel_index = len(channels)
         category_id = str(item.get("category_id") or "")
         channels.append(
@@ -233,9 +236,12 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
                 "name": str(item.get("name") or f"Channel {stream_id}"),
                 "category": categories_by_id.get(category_id, "Uncategorized"),
                 "logo": str(item.get("stream_icon") or ""),
-                "url": stream_url,
+                "url": hls_url,
+                "fallbackUrl": ts_url,
                 "playUrl": f"/api/stream?session={quote(session_id)}&channel={channel_index}",
-                "streamType": guess_stream_type(stream_url),
+                "streamType": "hls",
+                "fallbackPlayUrl": f"/api/stream?session={quote(session_id)}&channel={channel_index}&format=ts",
+                "fallbackStreamType": "mpegts",
                 "now": "EPG not connected yet",
             }
         )
@@ -312,6 +318,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
         channel_raw = params.get("channel", [""])[0]
+        stream_format = params.get("format", ["hls"])[0]
         session = SESSIONS.get(session_id)
 
         if not session:
@@ -320,7 +327,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
         try:
             channel = session.channels[int(channel_raw)]
-            stream_url = str(channel.get("url") or "")
+            stream_url = str(channel.get("fallbackUrl") if stream_format == "ts" else channel.get("url") or "")
             if not stream_url:
                 raise ValueError("Channel has no stream URL.")
             self.proxy_url(stream_url, session_id=session_id, session=session)
