@@ -658,7 +658,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/vod":
             self.handle_vod(parsed.query)
             return
-        self.serve_static(parsed.path)
+        self.serve_static(parsed.path, parsed.query)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -949,7 +949,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
         return f"/api/proxy?url={quote(url, safe='')}"
 
-    def serve_static(self, request_path: str) -> None:
+    def serve_static(self, request_path: str, query: str = "") -> None:
         relative = request_path.lstrip("/") or "index.html"
         target = (ROOT / relative).resolve()
         if ROOT not in target.parents and target != ROOT:
@@ -967,7 +967,8 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=300")
         self.end_headers()
         body = target.read_bytes()
-        if target.name == "index.html" and DEFAULT_SERVER_URL:
+        admin_override = parse_qs(query).get("admin", [""])[0] == "1"
+        if target.name == "index.html" and DEFAULT_SERVER_URL and not admin_override:
             text = body.decode("utf-8")
             text = text.replace('id="serverUrlField"', 'id="serverUrlField" class="is-hidden"', 1)
             body = text.encode("utf-8")
