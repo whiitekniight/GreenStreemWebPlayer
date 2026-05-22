@@ -99,7 +99,8 @@ button {
 
 .login-view,
 .home-view,
-.placeholder-view {
+.placeholder-view,
+.account-view {
   min-height: calc(100vh - 72px);
   display: grid;
   place-items: center;
@@ -454,6 +455,87 @@ video {
   color: var(--muted);
 }
 
+.account-view {
+  align-items: start;
+  place-items: stretch;
+}
+
+.account-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.account-header h2 {
+  margin: 0;
+  font-size: clamp(34px, 6vw, 64px);
+  text-transform: uppercase;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settings-panel {
+  min-height: 190px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 24, 28, 0.82);
+}
+
+.settings-panel h3 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.stat-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.stat-list div,
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.stat-list dt,
+.setting-row span,
+.muted-copy {
+  color: var(--muted);
+}
+
+.stat-list dd {
+  margin: 0;
+  font-weight: 900;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.button-row.stacked {
+  display: grid;
+}
+
 .is-hidden {
   display: none !important;
 }
@@ -484,5 +566,14 @@ video {
 
   .channel-logo {
     width: 54px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

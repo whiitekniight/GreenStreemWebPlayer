@@ -65,6 +65,7 @@ const els = {
   homeView: document.querySelector("#homeView"),
   playerView: document.querySelector("#playerView"),
   placeholderView: document.querySelector("#placeholderView"),
+  accountView: document.querySelector("#accountView"),
   loginForm: document.querySelector("#loginForm"),
   modeTabs: document.querySelectorAll(".mode-tab"),
   xtreamFields: document.querySelector("#xtreamFields"),
@@ -89,6 +90,16 @@ const els = {
   favoritesOnlyButton: document.querySelector("#favoritesOnlyButton"),
   resetPlaybackButton: document.querySelector("#resetPlaybackButton"),
   loginStatus: document.querySelector("#loginStatus"),
+  accountLoginType: document.querySelector("#accountLoginType"),
+  accountChannelCount: document.querySelector("#accountChannelCount"),
+  accountFavoriteCount: document.querySelector("#accountFavoriteCount"),
+  accountPlaybackMode: document.querySelector("#accountPlaybackMode"),
+  accountGuideCount: document.querySelector("#accountGuideCount"),
+  accountGuideStatus: document.querySelector("#accountGuideStatus"),
+  preferAutoButton: document.querySelector("#preferAutoButton"),
+  preferTsButton: document.querySelector("#preferTsButton"),
+  clearFavoritesButton: document.querySelector("#clearFavoritesButton"),
+  logoutButton: document.querySelector("#logoutButton"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
 };
@@ -104,18 +115,35 @@ function showSection(section) {
   els.loginView.classList.toggle("is-hidden", section !== "login");
   els.homeView.classList.toggle("is-hidden", section !== "home");
   els.playerView.classList.toggle("is-hidden", section !== "live");
-  els.placeholderView.classList.toggle("is-hidden", !["movies", "series", "account"].includes(section));
+  els.accountView.classList.toggle("is-hidden", section !== "account");
+  els.placeholderView.classList.toggle("is-hidden", !["movies", "series"].includes(section));
 
   if (section === "live") {
     renderCategories();
     renderChannels();
   }
 
-  if (section === "movies" || section === "series" || section === "account") {
+  if (section === "account") {
+    renderAccountSettings();
+  }
+
+  if (section === "movies" || section === "series") {
     const label = section === "movies" ? "Movies" : section === "series" ? "TV Series" : "Account Info";
     els.placeholderTitle.textContent = label;
     els.placeholderCopy.textContent = `${label} is stubbed in so the flow is ready for the next pass.`;
   }
+}
+
+function renderAccountSettings() {
+  const matchedGuideCount = state.channels.filter((channel) => channel.now && channel.now !== "EPG not connected yet").length;
+  els.accountLoginType.textContent = state.sessionId ? state.mode.toUpperCase() : "Not connected";
+  els.accountChannelCount.textContent = String(state.channels.length);
+  els.accountFavoriteCount.textContent = String(state.favorites.size);
+  els.accountPlaybackMode.textContent = state.preferredLiveStreamType === "mpegts" ? "TS First" : "Auto";
+  els.accountGuideCount.textContent = String(matchedGuideCount);
+  els.accountGuideStatus.textContent = matchedGuideCount
+    ? `${matchedGuideCount} channels have current guide data.`
+    : "Guide data has not matched any channels yet.";
 }
 
 function setLoginMode(mode) {
@@ -432,6 +460,7 @@ function toggleFavorite(name) {
   }
   localStorage.setItem("greenstreem:favorites", JSON.stringify([...state.favorites]));
   renderChannels();
+  renderAccountSettings();
 }
 
 function parseM3u(text) {
@@ -553,6 +582,41 @@ els.resetPlaybackButton.addEventListener("click", () => {
   state.pendingTsPreference = false;
   localStorage.removeItem("greenstreem:preferredLiveStreamType");
   els.nowTime.textContent = "Playback learning reset. Next channel will try HLS first.";
+  renderAccountSettings();
+});
+
+els.preferAutoButton.addEventListener("click", () => {
+  state.preferredLiveStreamType = "auto";
+  localStorage.removeItem("greenstreem:preferredLiveStreamType");
+  renderAccountSettings();
+});
+
+els.preferTsButton.addEventListener("click", () => {
+  state.preferredLiveStreamType = "mpegts";
+  localStorage.setItem("greenstreem:preferredLiveStreamType", "mpegts");
+  renderAccountSettings();
+});
+
+els.clearFavoritesButton.addEventListener("click", () => {
+  state.favorites.clear();
+  localStorage.setItem("greenstreem:favorites", "[]");
+  renderChannels();
+  renderAccountSettings();
+});
+
+els.logoutButton.addEventListener("click", () => {
+  clearPlayer();
+  state.sessionId = "";
+  state.channels = [...demoChannels];
+  state.activeChannelIndex = -1;
+  state.activeChannel = null;
+  els.currentChannelTitle.textContent = "Choose a channel";
+  els.currentCategoryLabel.textContent = "All Channels";
+  els.nowTitle.textContent = "No program selected";
+  els.nextTitle.textContent = "Guide data will appear here when connected.";
+  els.nowTime.textContent = "Idle.";
+  setStatus("Signed out.");
+  showSection("login");
 });
 
 els.fullscreenButton.addEventListener("click", () => {

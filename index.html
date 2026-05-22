@@ -103,6 +103,67 @@
           <p id="placeholderCopy">This section is ready for the next build pass.</p>
           <button class="secondary-button" type="button" data-section="home">Back</button>
         </section>
+
+        <section id="accountView" class="account-view is-hidden">
+          <div class="account-shell">
+            <div class="account-header">
+              <div>
+                <p class="eyebrow">Account Info</p>
+                <h2>GreenStreem Settings</h2>
+              </div>
+              <button class="secondary-button" type="button" data-section="home">Back</button>
+            </div>
+
+            <div class="settings-grid">
+              <section class="settings-panel">
+                <h3>Session</h3>
+                <dl class="stat-list">
+                  <div>
+                    <dt>Login Type</dt>
+                    <dd id="accountLoginType">Not connected</dd>
+                  </div>
+                  <div>
+                    <dt>Channels</dt>
+                    <dd id="accountChannelCount">0</dd>
+                  </div>
+                  <div>
+                    <dt>Favorites</dt>
+                    <dd id="accountFavoriteCount">0</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section class="settings-panel">
+                <h3>Playback</h3>
+                <div class="setting-row">
+                  <span>Live mode</span>
+                  <strong id="accountPlaybackMode">Auto</strong>
+                </div>
+                <div class="button-row">
+                  <button id="preferAutoButton" class="secondary-button" type="button">Auto</button>
+                  <button id="preferTsButton" class="secondary-button" type="button">TS First</button>
+                </div>
+              </section>
+
+              <section class="settings-panel">
+                <h3>Guide</h3>
+                <div class="setting-row">
+                  <span>Matched channels</span>
+                  <strong id="accountGuideCount">0</strong>
+                </div>
+                <p id="accountGuideStatus" class="muted-copy">Guide data has not been loaded yet.</p>
+              </section>
+
+              <section class="settings-panel">
+                <h3>Controls</h3>
+                <div class="button-row stacked">
+                  <button id="clearFavoritesButton" class="secondary-button" type="button">Clear Favorites</button>
+                  <button id="logoutButton" class="secondary-button" type="button">Sign Out</button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
       </main>
 
       <aside id="categoryDrawer" class="category-drawer" aria-label="Categories">
