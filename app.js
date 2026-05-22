@@ -148,6 +148,12 @@ function setStatus(message) {
   els.loginStatus.textContent = message;
 }
 
+function stopLivePreviewForSection(section) {
+  if (state.section === "live" && section !== "live" && !isFullscreenPlayerOpen()) {
+    clearPlayer();
+  }
+}
+
 async function loadPublicConfig() {
   if (!apiAvailable) return;
 
@@ -166,6 +172,7 @@ async function loadPublicConfig() {
 }
 
 function showSection(section) {
+  stopLivePreviewForSection(section);
   state.section = section;
   els.loginView.classList.toggle("is-hidden", section !== "login");
   els.homeView.classList.toggle("is-hidden", section !== "home");
