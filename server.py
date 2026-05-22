@@ -41,6 +41,7 @@ class Session:
     credentials: dict[str, str] = field(default_factory=dict)
     channels: list[dict[str, Any]] = field(default_factory=list)
     cookie_jar: http.cookiejar.CookieJar = field(default_factory=http.cookiejar.CookieJar)
+    proxy_targets: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 SESSIONS: dict[str, Session] = {}
@@ -79,8 +80,12 @@ def open_provider_url(url: str, headers: dict[str, str], session: Session | None
     return urlopen(request, timeout=20)
 
 
-def provider_headers(url: str, extra: dict[str, str] | None = None) -> dict[str, str]:
-    parsed = urlparse(url)
+def provider_headers(
+    url: str,
+    extra: dict[str, str] | None = None,
+    referer_url: str | None = None,
+) -> dict[str, str]:
+    parsed = urlparse(referer_url or url)
     origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
     headers = {
         "User-Agent": USER_AGENT,
@@ -90,7 +95,7 @@ def provider_headers(url: str, extra: dict[str, str] | None = None) -> dict[str,
     }
     if origin:
         headers["Origin"] = origin
-        headers["Referer"] = origin + "/"
+        headers["Referer"] = referer_url or origin + "/"
     if extra:
         headers.update(extra)
     return headers
@@ -323,13 +328,20 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             record_diagnostic(session_id, "stream-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
-    def proxy_url(self, url: str, *, session_id: str = "", session: Session | None = None) -> None:
+    def proxy_url(
+        self,
+        url: str,
+        *,
+        session_id: str = "",
+        session: Session | None = None,
+        referer_url: str | None = None,
+    ) -> None:
         extra_headers: dict[str, str] = {}
         range_header = self.headers.get("Range")
         if range_header:
             extra_headers["Range"] = range_header
 
-        headers = provider_headers(url, extra_headers)
+        headers = provider_headers(url, extra_headers, referer_url=referer_url)
         record_diagnostic(session_id, "request", url)
         try:
             response = open_provider_url(url, headers, session)
@@ -350,7 +362,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                     raise ValueError("HLS playlist is too large for this prototype build.")
                 charset = response.headers.get_content_charset() or "utf-8"
                 playlist = raw.decode(charset, errors="replace")
-                rewritten = self.rewrite_hls_playlist(playlist, url, session_id)
+                rewritten = self.rewrite_hls_playlist(playlist, url, session_id, session)
                 body = rewritten.encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/vnd.apple.mpegurl")
@@ -376,14 +388,17 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
     def handle_proxy(self, query: str) -> None:
         params = parse_qs(query)
-        target = unquote(params.get("url", [""])[0])
         session_id = params.get("session", [""])[0]
         session = SESSIONS.get(session_id) if session_id else None
+        token = params.get("token", [""])[0]
+        target_info = session.proxy_targets.get(token) if session and token else None
+        target = str(target_info.get("url") or "") if target_info else unquote(params.get("url", [""])[0])
+        referer_url = str(target_info.get("referer") or "") if target_info else None
         if not target.startswith(("http://", "https://")):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid proxy URL.")
             return
         try:
-            self.proxy_url(target, session_id=session_id, session=session)
+            self.proxy_url(target, session_id=session_id, session=session, referer_url=referer_url)
         except Exception as exc:
             record_diagnostic(session_id, "proxy-error", target, details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
@@ -402,7 +417,13 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             or lower_path.endswith(".m3u8")
         )
 
-    def rewrite_hls_playlist(self, playlist: str, base_url: str, session_id: str) -> str:
+    def rewrite_hls_playlist(
+        self,
+        playlist: str,
+        base_url: str,
+        session_id: str,
+        session: Session | None,
+    ) -> str:
         output: list[str] = []
         for line in playlist.splitlines():
             stripped = line.strip()
@@ -411,23 +432,39 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 continue
 
             if stripped.startswith("#"):
-                output.append(self.rewrite_hls_tag(line, base_url, session_id))
+                output.append(self.rewrite_hls_tag(line, base_url, session_id, session))
                 continue
 
-            output.append(self.proxy_link(urljoin(base_url, stripped), session_id))
+            output.append(self.proxy_link(urljoin(base_url, stripped), session_id, session, base_url))
 
         return "\n".join(output) + "\n"
 
-    def rewrite_hls_tag(self, line: str, base_url: str, session_id: str) -> str:
+    def rewrite_hls_tag(
+        self,
+        line: str,
+        base_url: str,
+        session_id: str,
+        session: Session | None,
+    ) -> str:
         def replace_uri(match: re.Match[str]) -> str:
             absolute = urljoin(base_url, match.group(1))
-            return f'URI="{self.proxy_link(absolute, session_id)}"'
+            return f'URI="{self.proxy_link(absolute, session_id, session, base_url)}"'
 
         return re.sub(r'URI="([^"]+)"', replace_uri, line)
 
-    def proxy_link(self, url: str, session_id: str) -> str:
-        session_param = f"&session={quote(session_id)}" if session_id else ""
-        return f"/api/proxy?url={quote(url, safe='')}{session_param}"
+    def proxy_link(
+        self,
+        url: str,
+        session_id: str,
+        session: Session | None,
+        referer_url: str,
+    ) -> str:
+        if session and session_id:
+            token = secrets.token_urlsafe(10)
+            session.proxy_targets[token] = {"url": url, "referer": referer_url}
+            return f"/api/proxy?session={quote(session_id)}&token={quote(token)}"
+
+        return f"/api/proxy?url={quote(url, safe='')}"
 
     def serve_static(self, request_path: str) -> None:
         relative = request_path.lstrip("/") or "index.html"
