@@ -26,7 +26,11 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
-USER_AGENT = "GreenStreemWebPlayer/0.1"
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
 
 
 @dataclass
@@ -51,7 +55,7 @@ def normalize_url(raw: str) -> str:
 
 
 def fetch_text(url: str, *, limit: int = MAX_PLAYLIST_BYTES) -> str:
-    request = Request(url, headers={"User-Agent": USER_AGENT})
+    request = Request(url, headers=provider_headers(url))
     with urlopen(request, timeout=20) as response:
         content = response.read(limit + 1)
         if len(content) > limit:
@@ -63,6 +67,23 @@ def fetch_text(url: str, *, limit: int = MAX_PLAYLIST_BYTES) -> str:
 def fetch_json(url: str) -> Any:
     text = fetch_text(url)
     return json.loads(text)
+
+
+def provider_headers(url: str, extra: dict[str, str] | None = None) -> dict[str, str]:
+    parsed = urlparse(url)
+    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    }
+    if origin:
+        headers["Origin"] = origin
+        headers["Referer"] = origin + "/"
+    if extra:
+        headers.update(extra)
+    return headers
 
 
 def attr(line: str, name: str) -> str:
@@ -293,11 +314,12 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def proxy_url(self, url: str, *, session_id: str = "") -> None:
-        headers = {"User-Agent": USER_AGENT}
+        extra_headers: dict[str, str] = {}
         range_header = self.headers.get("Range")
         if range_header:
-            headers["Range"] = range_header
+            extra_headers["Range"] = range_header
 
+        headers = provider_headers(url, extra_headers)
         request = Request(url, headers=headers)
         record_diagnostic(session_id, "request", url)
         try:
