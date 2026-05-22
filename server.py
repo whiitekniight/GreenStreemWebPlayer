@@ -44,6 +44,7 @@ class Session:
     created_at: float
     credentials: dict[str, str] = field(default_factory=dict)
     channels: list[dict[str, Any]] = field(default_factory=list)
+    account: dict[str, str] = field(default_factory=dict)
     cookie_jar: http.cookiejar.CookieJar = field(default_factory=http.cookiejar.CookieJar)
     proxy_targets: dict[str, dict[str, str]] = field(default_factory=dict)
 
@@ -285,6 +286,44 @@ def xmltv_url(base_url: str, username: str, password: str) -> str:
     return f"{base_url}/xmltv.php?{query}"
 
 
+def account_api_url(base_url: str, username: str, password: str) -> str:
+    query = urlencode({"username": username, "password": password})
+    return f"{base_url}/player_api.php?{query}"
+
+
+def format_unix_expiry(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return "Unknown"
+    try:
+        timestamp = int(value)
+        if timestamp <= 0:
+            return "Never"
+        return datetime.fromtimestamp(timestamp).astimezone().strftime("%b %d, %Y")
+    except ValueError:
+        return value
+
+
+def load_xtream_account(base_url: str, username: str, password: str) -> dict[str, str]:
+    try:
+        data = fetch_json(account_api_url(base_url, username, password))
+    except Exception:
+        return {}
+
+    user_info = data.get("user_info") if isinstance(data, dict) else {}
+    server_info = data.get("server_info") if isinstance(data, dict) else {}
+    if not isinstance(user_info, dict):
+        return {}
+
+    return {
+        "status": str(user_info.get("status") or "Unknown"),
+        "expires": format_unix_expiry(user_info.get("exp_date")),
+        "activeConnections": str(user_info.get("active_cons") or "0"),
+        "maxConnections": str(user_info.get("max_connections") or "Unknown"),
+        "serverTimeZone": str(server_info.get("timezone") or "") if isinstance(server_info, dict) else "",
+    }
+
+
 def safe_url_info(url: str) -> dict[str, str]:
     parsed = urlparse(url)
     path = parsed.path or ""
@@ -429,6 +468,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                     credentials={"serverUrl": base_url, "username": username},
                 )
                 SESSIONS[session_id] = session
+                session.account = load_xtream_account(base_url, username, password)
                 session.channels = load_xtream_channels(base_url, username, password, session_id)
                 try:
                     matched = apply_epg(
@@ -441,7 +481,13 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             else:
                 raise ValueError("Choose Xtream or M3U login.")
 
-            self.write_json({"sessionId": session_id, "channels": public_channels(session.channels)})
+            self.write_json(
+                {
+                    "sessionId": session_id,
+                    "channels": public_channels(session.channels),
+                    "account": session.account,
+                }
+            )
         except (HTTPError, URLError) as exc:
             self.write_json({"error": f"Provider request failed: {exc}"}, HTTPStatus.BAD_GATEWAY)
         except Exception as exc:

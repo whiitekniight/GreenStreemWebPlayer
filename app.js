@@ -58,6 +58,7 @@ const state = {
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
   pendingTsPreference: false,
+  account: {},
 };
 
 const els = {
@@ -93,6 +94,9 @@ const els = {
   accountLoginType: document.querySelector("#accountLoginType"),
   accountChannelCount: document.querySelector("#accountChannelCount"),
   accountFavoriteCount: document.querySelector("#accountFavoriteCount"),
+  accountStatus: document.querySelector("#accountStatus"),
+  accountExpires: document.querySelector("#accountExpires"),
+  accountConnections: document.querySelector("#accountConnections"),
   accountPlaybackMode: document.querySelector("#accountPlaybackMode"),
   accountGuideCount: document.querySelector("#accountGuideCount"),
   accountGuideStatus: document.querySelector("#accountGuideStatus"),
@@ -139,6 +143,12 @@ function renderAccountSettings() {
   els.accountLoginType.textContent = state.sessionId ? state.mode.toUpperCase() : "Not connected";
   els.accountChannelCount.textContent = String(state.channels.length);
   els.accountFavoriteCount.textContent = String(state.favorites.size);
+  els.accountStatus.textContent = state.account.status || "Unknown";
+  els.accountExpires.textContent = state.account.expires || "Unknown";
+  els.accountConnections.textContent =
+    state.account.activeConnections || state.account.maxConnections
+      ? `${state.account.activeConnections || "0"} / ${state.account.maxConnections || "Unknown"}`
+      : "Unknown";
   els.accountPlaybackMode.textContent = state.preferredLiveStreamType === "mpegts" ? "TS First" : "Auto";
   els.accountGuideCount.textContent = String(matchedGuideCount);
   els.accountGuideStatus.textContent = matchedGuideCount
@@ -541,6 +551,7 @@ els.loginForm.addEventListener("submit", async (event) => {
     }
     state.sessionId = result.sessionId;
     state.channels = result.channels.length ? result.channels : [...demoChannels];
+    state.account = result.account || {};
     state.activeCategory = "All Channels";
     state.activeChannelIndex = -1;
     state.preferredLiveStreamType = localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto";
@@ -607,6 +618,7 @@ els.clearFavoritesButton.addEventListener("click", () => {
 els.logoutButton.addEventListener("click", () => {
   clearPlayer();
   state.sessionId = "";
+  state.account = {};
   state.channels = [...demoChannels];
   state.activeChannelIndex = -1;
   state.activeChannel = null;
