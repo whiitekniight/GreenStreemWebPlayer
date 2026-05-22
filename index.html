@@ -16,6 +16,12 @@
             <span>Web Player</span>
           </div>
         </div>
+        <nav class="main-nav" aria-label="Main sections">
+          <button type="button" data-section="live">Live</button>
+          <button type="button" data-section="movies">Movies</button>
+          <button type="button" data-section="series">Series</button>
+          <button type="button" data-section="account">Account</button>
+        </nav>
         <nav class="top-actions" aria-label="Player actions">
           <button id="openCategoriesButton" class="icon-button" type="button" title="Categories">☰</button>
           <button id="searchButton" class="icon-button" type="button" title="Search">⌕</button>
@@ -91,6 +97,7 @@
           <section class="channel-pane">
             <div class="channel-toolbar">
               <input id="channelSearchInput" placeholder="Search channels...">
+              <button class="secondary-button" type="button" data-section="home">Back</button>
               <button id="favoritesOnlyButton" class="chip-button" type="button">Favorites</button>
               <button id="resetPlaybackButton" class="icon-button" type="button" title="Reset playback learning">↺</button>
             </div>

@@ -136,6 +136,9 @@ function showSection(section) {
   els.accountView.classList.toggle("is-hidden", section !== "account");
   els.libraryView.classList.toggle("is-hidden", !["movies", "series"].includes(section));
   els.placeholderView.classList.add("is-hidden");
+  document.querySelectorAll(".main-nav button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.section === section);
+  });
 
   if (section === "live") {
     renderCategories();

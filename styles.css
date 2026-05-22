@@ -42,9 +42,10 @@ button {
 
 .topbar {
   height: 72px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
   align-items: center;
-  justify-content: space-between;
+  gap: 18px;
   padding: 0 30px;
   border-bottom: 1px solid var(--line);
   background: rgba(9, 14, 17, 0.88);
@@ -81,7 +82,30 @@ button {
 
 .top-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+.main-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.main-nav button {
+  min-width: 86px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel-2);
+  font-weight: 800;
+}
+
+.main-nav button.is-active {
+  color: #07120d;
+  border-color: var(--green);
+  background: var(--green);
 }
 
 .icon-button {
@@ -324,7 +348,7 @@ video {
 
 .channel-toolbar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -663,7 +687,19 @@ video {
 
 @media (max-width: 900px) {
   .topbar {
+    height: auto;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 12px;
     padding: 0 16px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .top-actions,
+  .main-nav {
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 
   .player-view {
@@ -687,6 +723,10 @@ video {
 
   .channel-logo {
     width: 54px;
+  }
+
+  .channel-toolbar {
+    grid-template-columns: 1fr auto;
   }
 
   .settings-grid {
