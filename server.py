@@ -891,7 +891,12 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "public, max-age=300")
         self.end_headers()
-        self.wfile.write(target.read_bytes())
+        body = target.read_bytes()
+        if target.name == "index.html" and DEFAULT_SERVER_URL:
+            text = body.decode("utf-8")
+            text = text.replace('id="serverUrlField"', 'id="serverUrlField" class="is-hidden"', 1)
+            body = text.encode("utf-8")
+        self.wfile.write(body)
 
     def write_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")

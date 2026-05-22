@@ -85,7 +85,6 @@ const els = {
   serverUrlField: document.querySelector("#serverUrlField"),
   serverUrlInput: document.querySelector("#serverUrlInput"),
   m3uFields: document.querySelector("#m3uFields"),
-  demoButton: document.querySelector("#demoButton"),
   channelList: document.querySelector("#channelList"),
   categoryList: document.querySelector("#categoryList"),
   channelSearchInput: document.querySelector("#channelSearchInput"),
@@ -926,11 +925,6 @@ els.loginForm.addEventListener("submit", async (event) => {
   } catch (error) {
     setStatus(error.message || "Could not load the playlist.");
   }
-});
-
-els.demoButton.addEventListener("click", () => {
-  state.channels = [...demoChannels];
-  showSection("home");
 });
 
 document.querySelectorAll("[data-section]").forEach((button) => {
