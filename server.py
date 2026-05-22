@@ -446,6 +446,67 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
     return channels
 
 
+def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
+    base_url = session.credentials.get("serverUrl", "")
+    username = session.credentials.get("username", "")
+    password = session.credentials.get("password", "")
+    if not base_url or not username or not password:
+        return {"categories": [], "items": []}
+
+    if media_type == "movies":
+        category_action = "get_vod_categories"
+        item_action = "get_vod_streams"
+        id_key = "stream_id"
+    elif media_type == "series":
+        category_action = "get_series_categories"
+        item_action = "get_series"
+        id_key = "series_id"
+    else:
+        raise ValueError("Unknown library type.")
+
+    categories_by_id: dict[str, str] = {}
+    raw_categories = fetch_json(xtream_api_url(base_url, username, password, category_action))
+    if isinstance(raw_categories, list):
+        categories_by_id = {
+            str(item.get("category_id")): str(item.get("category_name") or "Uncategorized")
+            for item in raw_categories
+            if isinstance(item, dict)
+        }
+
+    raw_items = fetch_json(xtream_api_url(base_url, username, password, item_action))
+    if not isinstance(raw_items, list):
+        raise ValueError("Provider returned an unexpected library list.")
+
+    items: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        item_id = str(item.get(id_key) or "")
+        if not item_id:
+            continue
+
+        category_id = str(item.get("category_id") or "")
+        title = str(item.get("name") or item.get("title") or "Untitled")
+        items.append(
+            {
+                "id": item_id,
+                "title": title,
+                "category": categories_by_id.get(category_id, "Uncategorized"),
+                "poster": str(item.get("stream_icon") or item.get("cover") or ""),
+                "rating": str(item.get("rating") or ""),
+                "year": str(item.get("year") or item.get("releaseDate") or item.get("release_date") or ""),
+                "plot": str(item.get("plot") or item.get("description") or ""),
+                "type": media_type,
+            }
+        )
+
+    return {
+        "categories": ["All"] + sorted(set(categories_by_id.values())),
+        "items": items,
+    }
+
+
 class GreenStreemHandler(BaseHTTPRequestHandler):
     server_version = "GreenStreemWebPlayer/0.1"
 
@@ -468,6 +529,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/session":
             self.handle_session(parsed.query)
+            return
+        if parsed.path == "/api/library":
+            self.handle_library(parsed.query)
             return
         self.serve_static(parsed.path)
 
@@ -504,7 +568,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 session = Session(
                     mode="xtream",
                     created_at=time.time(),
-                    credentials={"serverUrl": base_url, "username": username},
+                    credentials={"serverUrl": base_url, "username": username, "password": password},
                 )
                 SESSIONS[session_id] = session
                 session.account = load_xtream_account(base_url, username, password)
@@ -642,6 +706,23 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 "guide": guide_info(session),
             }
         )
+
+    def handle_library(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        media_type = params.get("type", [""])[0]
+        session = SESSIONS.get(session_id)
+        if not session:
+            self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
+            return
+        if session.mode != "xtream":
+            self.write_json({"error": "Movies and Series require Xtream login in this build."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            self.write_json(load_xtream_library(session, media_type))
+        except Exception as exc:
+            self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
     def is_hls_playlist(self, url: str, content_type: str) -> bool:
         lower_type = content_type.lower()

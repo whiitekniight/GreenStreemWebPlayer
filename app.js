@@ -61,6 +61,11 @@ const state = {
   account: {},
   guide: {},
   guidePollTimer: null,
+  activeLibraryType: "",
+  libraries: {
+    movies: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "All" },
+    series: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "All" },
+  },
 };
 
 const els = {
@@ -68,6 +73,7 @@ const els = {
   homeView: document.querySelector("#homeView"),
   playerView: document.querySelector("#playerView"),
   placeholderView: document.querySelector("#placeholderView"),
+  libraryView: document.querySelector("#libraryView"),
   accountView: document.querySelector("#accountView"),
   loginForm: document.querySelector("#loginForm"),
   modeTabs: document.querySelectorAll(".mode-tab"),
@@ -106,6 +112,12 @@ const els = {
   preferTsButton: document.querySelector("#preferTsButton"),
   clearFavoritesButton: document.querySelector("#clearFavoritesButton"),
   logoutButton: document.querySelector("#logoutButton"),
+  libraryEyebrow: document.querySelector("#libraryEyebrow"),
+  libraryTitle: document.querySelector("#libraryTitle"),
+  librarySearchInput: document.querySelector("#librarySearchInput"),
+  libraryCategorySelect: document.querySelector("#libraryCategorySelect"),
+  libraryStatus: document.querySelector("#libraryStatus"),
+  libraryGrid: document.querySelector("#libraryGrid"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
 };
@@ -122,7 +134,8 @@ function showSection(section) {
   els.homeView.classList.toggle("is-hidden", section !== "home");
   els.playerView.classList.toggle("is-hidden", section !== "live");
   els.accountView.classList.toggle("is-hidden", section !== "account");
-  els.placeholderView.classList.toggle("is-hidden", !["movies", "series"].includes(section));
+  els.libraryView.classList.toggle("is-hidden", !["movies", "series"].includes(section));
+  els.placeholderView.classList.add("is-hidden");
 
   if (section === "live") {
     renderCategories();
@@ -134,9 +147,7 @@ function showSection(section) {
   }
 
   if (section === "movies" || section === "series") {
-    const label = section === "movies" ? "Movies" : section === "series" ? "TV Series" : "Account Info";
-    els.placeholderTitle.textContent = label;
-    els.placeholderCopy.textContent = `${label} is stubbed in so the flow is ready for the next pass.`;
+    showLibrary(section);
   }
 }
 
@@ -156,6 +167,139 @@ function renderAccountSettings() {
   els.accountGuideStatus.textContent = state.guide.status || (
     matchedGuideCount ? `${matchedGuideCount} channels have current guide data.` : "Guide data has not matched any channels yet."
   );
+}
+
+function showLibrary(type) {
+  state.activeLibraryType = type;
+  const label = type === "movies" ? "Movies" : "TV Series";
+  els.libraryEyebrow.textContent = "Xtream Library";
+  els.libraryTitle.textContent = label;
+  els.librarySearchInput.value = "";
+
+  renderLibrary();
+  if (!state.libraries[type].loaded && !state.libraries[type].loading) {
+    loadLibrary(type);
+  }
+}
+
+async function loadLibrary(type) {
+  const library = state.libraries[type];
+  if (!state.sessionId) {
+    els.libraryStatus.textContent = "Log in with Xtream to load this library.";
+    return;
+  }
+
+  library.loading = true;
+  els.libraryStatus.textContent = `Loading ${type === "movies" ? "movies" : "series"}...`;
+  renderLibrary();
+
+  try {
+    const response = await fetch(`/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Library failed to load.");
+
+    library.categories = result.categories || ["All"];
+    library.items = result.items || [];
+    library.loaded = true;
+    library.selectedCategory = "All";
+    els.libraryStatus.textContent = `Loaded ${library.items.length} ${type === "movies" ? "movies" : "series"}.`;
+  } catch (error) {
+    els.libraryStatus.textContent = error.message || "Library failed to load.";
+  } finally {
+    library.loading = false;
+    renderLibrary();
+  }
+}
+
+function filteredLibraryItems() {
+  const library = state.libraries[state.activeLibraryType] || { items: [] };
+  const search = els.librarySearchInput.value.trim().toLowerCase();
+  return library.items.filter((item) => {
+    const categoryMatch = library.selectedCategory === "All" || item.category === library.selectedCategory;
+    const searchMatch =
+      !search ||
+      item.title.toLowerCase().includes(search) ||
+      item.category.toLowerCase().includes(search) ||
+      (item.plot || "").toLowerCase().includes(search);
+    return categoryMatch && searchMatch;
+  });
+}
+
+function renderLibrary() {
+  const type = state.activeLibraryType;
+  const library = state.libraries[type];
+  if (!library) return;
+
+  els.libraryCategorySelect.innerHTML = "";
+  (library.categories.length ? library.categories : ["All"]).forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category;
+    option.textContent = category;
+    option.selected = category === library.selectedCategory;
+    els.libraryCategorySelect.appendChild(option);
+  });
+
+  els.libraryGrid.innerHTML = "";
+  if (library.loading) {
+    els.libraryGrid.appendChild(emptyLibraryMessage("Loading..."));
+    return;
+  }
+
+  const items = filteredLibraryItems();
+  if (!items.length) {
+    els.libraryGrid.appendChild(emptyLibraryMessage(library.loaded ? "No items found." : "Library has not loaded yet."));
+    return;
+  }
+
+  items.slice(0, 300).forEach((item) => {
+    els.libraryGrid.appendChild(renderLibraryCard(item));
+  });
+}
+
+function emptyLibraryMessage(message) {
+  const empty = document.createElement("p");
+  empty.className = "empty-state";
+  empty.textContent = message;
+  return empty;
+}
+
+function renderLibraryCard(item) {
+  const card = document.createElement("button");
+  card.className = "library-card";
+  card.type = "button";
+
+  const poster = document.createElement("span");
+  poster.className = "poster-frame";
+  if (item.poster) {
+    const img = document.createElement("img");
+    img.src = item.poster;
+    img.alt = "";
+    poster.appendChild(img);
+  } else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "poster-placeholder";
+    placeholder.textContent = item.title.slice(0, 1).toUpperCase();
+    poster.appendChild(placeholder);
+  }
+
+  const body = document.createElement("span");
+  body.className = "library-card-body";
+
+  const title = document.createElement("span");
+  title.className = "library-card-title";
+  title.textContent = item.title;
+
+  const meta = document.createElement("span");
+  meta.className = "library-card-meta";
+  meta.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ");
+
+  const plot = document.createElement("span");
+  plot.className = "library-card-plot";
+  plot.textContent = item.plot || "";
+
+  body.append(title, meta, plot);
+  card.append(poster, body);
+  return card;
 }
 
 function setLoginMode(mode) {
@@ -646,6 +790,13 @@ els.closeCategoriesButton.addEventListener("click", closeDrawer);
 els.drawerScrim.addEventListener("click", closeDrawer);
 els.categorySearchInput.addEventListener("input", renderCategories);
 els.channelSearchInput.addEventListener("input", renderChannels);
+els.librarySearchInput.addEventListener("input", renderLibrary);
+els.libraryCategorySelect.addEventListener("change", () => {
+  const library = state.libraries[state.activeLibraryType];
+  if (!library) return;
+  library.selectedCategory = els.libraryCategorySelect.value;
+  renderLibrary();
+});
 
 els.searchButton.addEventListener("click", () => {
   showSection("live");

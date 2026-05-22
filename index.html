@@ -104,6 +104,24 @@
           <button class="secondary-button" type="button" data-section="home">Back</button>
         </section>
 
+        <section id="libraryView" class="library-view is-hidden">
+          <div class="library-shell">
+            <div class="library-header">
+              <div>
+                <p id="libraryEyebrow" class="eyebrow">Library</p>
+                <h2 id="libraryTitle">Movies</h2>
+              </div>
+              <button class="secondary-button" type="button" data-section="home">Back</button>
+            </div>
+            <div class="library-toolbar">
+              <input id="librarySearchInput" placeholder="Search library...">
+              <select id="libraryCategorySelect" aria-label="Library category"></select>
+            </div>
+            <p id="libraryStatus" class="status-line">Choose Movies or TV Series.</p>
+            <div id="libraryGrid" class="library-grid" aria-label="Library items"></div>
+          </div>
+        </section>
+
         <section id="accountView" class="account-view is-hidden">
           <div class="account-shell">
             <div class="account-header">
