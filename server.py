@@ -8,6 +8,7 @@ without Node/npm. It keeps IPTV credentials in memory only.
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import mimetypes
 import re
@@ -21,7 +22,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 
 ROOT = Path(__file__).resolve().parent
@@ -39,6 +40,7 @@ class Session:
     created_at: float
     credentials: dict[str, str] = field(default_factory=dict)
     channels: list[dict[str, Any]] = field(default_factory=list)
+    cookie_jar: http.cookiejar.CookieJar = field(default_factory=http.cookiejar.CookieJar)
 
 
 SESSIONS: dict[str, Session] = {}
@@ -67,6 +69,14 @@ def fetch_text(url: str, *, limit: int = MAX_PLAYLIST_BYTES) -> str:
 def fetch_json(url: str) -> Any:
     text = fetch_text(url)
     return json.loads(text)
+
+
+def open_provider_url(url: str, headers: dict[str, str], session: Session | None = None):
+    request = Request(url, headers=headers)
+    if session:
+        opener = build_opener(HTTPCookieProcessor(session.cookie_jar))
+        return opener.open(request, timeout=20)
+    return urlopen(request, timeout=20)
 
 
 def provider_headers(url: str, extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -308,22 +318,21 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             stream_url = str(channel.get("url") or "")
             if not stream_url:
                 raise ValueError("Channel has no stream URL.")
-            self.proxy_url(stream_url, session_id=session_id)
+            self.proxy_url(stream_url, session_id=session_id, session=session)
         except Exception as exc:
             record_diagnostic(session_id, "stream-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
-    def proxy_url(self, url: str, *, session_id: str = "") -> None:
+    def proxy_url(self, url: str, *, session_id: str = "", session: Session | None = None) -> None:
         extra_headers: dict[str, str] = {}
         range_header = self.headers.get("Range")
         if range_header:
             extra_headers["Range"] = range_header
 
         headers = provider_headers(url, extra_headers)
-        request = Request(url, headers=headers)
         record_diagnostic(session_id, "request", url)
         try:
-            response = urlopen(request, timeout=20)
+            response = open_provider_url(url, headers, session)
         except HTTPError as exc:
             record_diagnostic(session_id, "http-error", url, status=exc.code, reason=exc.reason)
             raise
@@ -369,11 +378,12 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         target = unquote(params.get("url", [""])[0])
         session_id = params.get("session", [""])[0]
+        session = SESSIONS.get(session_id) if session_id else None
         if not target.startswith(("http://", "https://")):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid proxy URL.")
             return
         try:
-            self.proxy_url(target, session_id=session_id)
+            self.proxy_url(target, session_id=session_id, session=session)
         except Exception as exc:
             record_diagnostic(session_id, "proxy-error", target, details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
