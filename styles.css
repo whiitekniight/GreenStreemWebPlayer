@@ -562,6 +562,41 @@ video {
   line-height: 1.5;
 }
 
+.category-manager-panel {
+  max-width: 760px;
+}
+
+.category-manager-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(560px, 62vh);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.category-manager-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 12, 14, 0.58);
+}
+
+.category-manager-row.is-hidden-group strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.category-manager-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .fullscreen-player {
   position: fixed;
   inset: 0;
@@ -855,6 +890,14 @@ video {
 
   .channel-toolbar {
     grid-template-columns: 1fr auto;
+  }
+
+  .category-manager-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-manager-controls {
+    flex-wrap: wrap;
   }
 
   .settings-grid {
