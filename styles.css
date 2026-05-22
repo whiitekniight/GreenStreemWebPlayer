@@ -189,6 +189,13 @@ input:focus {
   margin-top: 24px;
 }
 
+.status-line {
+  min-height: 20px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .primary-button,
 .secondary-button,
 .chip-button {
@@ -209,6 +216,12 @@ input:focus {
   color: var(--text);
   border: 1px solid var(--line);
   background: var(--panel-2);
+}
+
+.chip-button.is-active {
+  color: #07120d;
+  border-color: var(--green);
+  background: var(--green);
 }
 
 .home-view {
@@ -349,6 +362,11 @@ video {
 
 .favorite-button.is-favorite {
   color: var(--pink);
+}
+
+.empty-state {
+  color: var(--muted);
+  padding: 20px 0;
 }
 
 .category-drawer {

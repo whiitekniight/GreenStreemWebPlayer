@@ -46,6 +46,7 @@ const demoChannels = [
 const state = {
   mode: "xtream",
   section: "login",
+  sessionId: "",
   channels: [...demoChannels],
   activeCategory: "All Channels",
   activeChannelIndex: -1,
@@ -79,9 +80,16 @@ const els = {
   fullscreenButton: document.querySelector("#fullscreenButton"),
   searchButton: document.querySelector("#searchButton"),
   favoritesOnlyButton: document.querySelector("#favoritesOnlyButton"),
+  loginStatus: document.querySelector("#loginStatus"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
 };
+
+const apiAvailable = window.location.protocol !== "file:";
+
+function setStatus(message) {
+  els.loginStatus.textContent = message;
+}
 
 function showSection(section) {
   state.section = section;
@@ -179,16 +187,30 @@ function renderChannels() {
     row.classList.toggle("is-active", originalIndex === state.activeChannelIndex);
     row.type = "button";
 
-    const logo = channel.logo
-      ? `<img class="channel-logo" src="${channel.logo}" alt="">`
-      : `<span class="channel-logo" aria-hidden="true"></span>`;
+    const number = document.createElement("span");
+    number.className = "channel-number";
+    number.textContent = String(originalIndex + 1);
 
-    row.innerHTML = `
-      <span class="channel-number">${originalIndex + 1}</span>
-      ${logo}
-      <span class="channel-name">${channel.name}</span>
-      <span class="favorite-button ${state.favorites.has(channel.name) ? "is-favorite" : ""}" aria-label="Favorite">☆</span>
-    `;
+    const logo = channel.logo ? document.createElement("img") : document.createElement("span");
+    logo.className = "channel-logo";
+    if (channel.logo) {
+      logo.src = channel.logo;
+      logo.alt = "";
+    } else {
+      logo.setAttribute("aria-hidden", "true");
+    }
+
+    const name = document.createElement("span");
+    name.className = "channel-name";
+    name.textContent = channel.name;
+
+    const favorite = document.createElement("span");
+    favorite.className = "favorite-button";
+    favorite.classList.toggle("is-favorite", state.favorites.has(channel.name));
+    favorite.setAttribute("aria-label", "Favorite");
+    favorite.textContent = "☆";
+
+    row.append(number, logo, name, favorite);
 
     row.addEventListener("click", (event) => {
       if (event.target.classList.contains("favorite-button")) {
@@ -211,7 +233,7 @@ function playChannel(index) {
   els.nowTime.textContent = channel.url ? "Attempting browser playback." : "Demo channel has no live stream URL yet.";
 
   if (channel.url) {
-    els.videoPlayer.src = channel.url;
+    els.videoPlayer.src = channel.playUrl || channel.url;
     els.videoPlayer.play().catch(() => {
       els.nowTime.textContent = "Browser blocked autoplay or the stream needs backend proxy support.";
     });
@@ -277,23 +299,47 @@ els.modeTabs.forEach((tab) => {
 els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (state.mode === "m3u") {
-    const m3uUrl = document.querySelector("#m3uUrlInput").value.trim();
-    if (m3uUrl) {
-      try {
-        const response = await fetch(m3uUrl);
-        const playlistText = await response.text();
-        const parsed = parseM3u(playlistText);
-        if (parsed.length) {
-          state.channels = parsed;
-        }
-      } catch {
-        alert("The browser could not load that M3U directly. The backend proxy will handle this in the server build.");
-      }
-    }
+  if (!apiAvailable) {
+    setStatus("Open this through the Python backend for real login. Demo mode works from file.");
+    showSection("home");
+    return;
   }
 
-  showSection("home");
+  setStatus("Loading your playlist through GreenStreem backend...");
+
+  const payload =
+    state.mode === "m3u"
+      ? {
+          mode: "m3u",
+          m3uUrl: document.querySelector("#m3uUrlInput").value.trim(),
+          epgUrl: document.querySelector("#epgUrlInput").value.trim(),
+        }
+      : {
+          mode: "xtream",
+          serverUrl: document.querySelector("#serverUrlInput").value.trim(),
+          username: document.querySelector("#usernameInput").value.trim(),
+          password: document.querySelector("#passwordInput").value,
+        };
+
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "Login failed.");
+    }
+    state.sessionId = result.sessionId;
+    state.channels = result.channels.length ? result.channels : [...demoChannels];
+    state.activeCategory = "All Channels";
+    state.activeChannelIndex = -1;
+    setStatus(`Loaded ${state.channels.length} channels.`);
+    showSection("home");
+  } catch (error) {
+    setStatus(error.message || "Could not load the playlist.");
+  }
 });
 
 els.demoButton.addEventListener("click", () => {

@@ -16,9 +16,20 @@ backend is added.
 - Local M3U parser for simple browser-loadable playlists
 - Demo channel data for layout testing
 
-## Open Locally
+## Run Locally
 
-Open `index.html` in a browser.
+```powershell
+python server.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8097
+```
+
+`index.html` can still open directly for demo-mode layout work, but real M3U and
+Xtream loading should run through the Python backend.
 
 ## Next Backend Pass
 
