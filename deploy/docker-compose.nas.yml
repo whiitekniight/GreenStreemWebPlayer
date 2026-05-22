@@ -1,0 +1,21 @@
+services:
+  greenstreem-web-player:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: greenstreem-web-player
+    restart: unless-stopped
+    environment:
+      GREENSTREEM_HOST: 0.0.0.0
+      GREENSTREEM_PORT: 8097
+      GREENSTREEM_SESSION_TTL_SECONDS: 43200
+    ports:
+      - "8097:8097"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: greenstreem-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}

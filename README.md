@@ -1,22 +1,24 @@
 # GreenStreem Web Player
 
-Standalone web-player prototype for `greenstreemlabs.com/player`.
+Standalone GreenStreem web player for `player.greenstreemlabs.com`.
 
 This project is intentionally separate from the Android TV app in `GreenStreem`.
-It starts as a static browser app so the layout and flow can be shaped before a
-backend is added.
+The browser never receives provider usernames or passwords directly. Users log in
+through the backend, and the backend keeps IPTV credentials in memory for a
+short-lived session while proxying streams from the provider.
 
 ## Current Build
 
-- GreenStreem branded login screen
-- Xtream and M3U login modes
-- Main menu for Live Channels, Movies, TV Series, and Account Info
-- Live player layout with preview video, channel list, category drawer, search,
-  and favorites
-- Local M3U parser for simple browser-loadable playlists
-- Demo channel data for layout testing
-- Python backend for M3U/Xtream loading and same-origin stream proxying
-- HLS.js support plus backend playlist rewriting for `.m3u8` segment URLs
+- GreenStreem branded Xtream/M3U login
+- Live TV with category drawer, search, favorites, and small preview playback
+- HLS.js plus backend playlist rewriting for browser-friendly `.m3u8` playback
+- TS fallback/proxy path for providers that block HLS segments
+- EPG loading/matching in the backend
+- Account panel with provider status, expiry, active connections, and max connections
+- Movies and Series library browsing
+- Movie info modal, then fullscreen movie playback with fade-out controls
+- In-memory sessions with automatic expiry and cleanup
+- Basic production security headers
 
 ## Run Locally
 
@@ -30,21 +32,83 @@ Then open:
 http://127.0.0.1:8097
 ```
 
-`index.html` can still open directly for demo-mode layout work, but real M3U and
-Xtream loading should run through the Python backend.
+Optional environment settings:
 
-## Next Backend Pass
+```text
+GREENSTREEM_HOST=127.0.0.1
+GREENSTREEM_PORT=8097
+GREENSTREEM_SESSION_TTL_SECONDS=43200
+```
 
-The real hosted player should add a backend service before public use:
+## NAS + Cloudflare Tunnel Deploy
 
-- Store IPTV credentials server-side, not in frontend JavaScript
-- Proxy playlist, EPG, logo, and stream requests when browser CORS blocks them
-- Normalize Xtream live URLs to browser-friendly HLS/M3U8 when available
-- Add short-lived sessions for users
-- Add HTTPS deployment under `greenstreemlabs.com/player`
+Preferred first public setup:
 
-## Notes
+```text
+https://player.greenstreemlabs.com
+```
 
-Browsers can usually play HLS streams more reliably than raw transport streams.
-Some IPTV streams will need backend proxying or transmuxing before playback works
-well in Chrome, Brave, Edge, or Safari.
+Run the player on your NAS and publish it through Cloudflare Tunnel. This keeps
+your router closed while giving users a normal HTTPS web address.
+
+Use:
+
+```text
+deploy/docker-compose.nas.yml
+deploy/nas-cloudflare-tunnel.md
+```
+
+The tunnel should point `player.greenstreemlabs.com` to:
+
+```text
+http://greenstreem-web-player:8097
+```
+
+## VPS Deploy
+
+The VPS route also works if you later want it fully off your home network.
+
+```text
+https://player.greenstreemlabs.com
+```
+
+Use a reverse proxy such as Caddy in front of the Python app. The sample config
+is in `deploy/Caddyfile` and points the public HTTPS domain to the local backend
+on port `8097`.
+
+Basic VPS shape:
+
+```bash
+sudo useradd --system --home /opt/greenstreem-web-player --shell /usr/sbin/nologin greenstreem
+sudo mkdir -p /opt/greenstreem-web-player
+sudo chown -R greenstreem:greenstreem /opt/greenstreem-web-player
+```
+
+Copy this project into `/opt/greenstreem-web-player`, then install the service:
+
+```bash
+sudo cp deploy/greenstreem-web-player.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now greenstreem-web-player
+```
+
+Point DNS for `player.greenstreemlabs.com` at the VPS, install Caddy, use
+`deploy/Caddyfile`, then reload Caddy.
+
+## Docker
+
+```bash
+docker build -t greenstreem-web-player .
+docker run --rm -p 8097:8097 greenstreem-web-player
+```
+
+## Security Notes
+
+- Do not host this as a static-only site. The backend is required so credentials
+  stay server-side and stream/proxy URLs stay same-origin.
+- Use HTTPS in public. Browsers and IPTV providers are much happier when the
+  player, API, and media URLs all come through one secure origin.
+- Sessions are memory-only. Restarting the backend signs everyone out, which is
+  fine for the first hosted build.
+- The default session timeout is 12 hours and can be changed with
+  `GREENSTREEM_SESSION_TTL_SECONDS`.

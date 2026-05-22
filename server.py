@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small local backend for the GreenStreem Web Player prototype.
+"""Backend for the GreenStreem Web Player.
 
 This is intentionally dependency-free so it can run on this Windows machine
 without Node/npm. It keeps IPTV credentials in memory only.
@@ -11,6 +11,7 @@ import argparse
 import http.cookiejar
 import json
 import mimetypes
+import os
 import re
 import secrets
 import sys
@@ -32,6 +33,10 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 ROOT = Path(__file__).resolve().parent
 MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
 MAX_EPG_BYTES = 120 * 1024 * 1024
+DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
+DEFAULT_PORT = int(os.environ.get("GREENSTREEM_PORT", "8097"))
+SESSION_TTL_SECONDS = int(os.environ.get("GREENSTREEM_SESSION_TTL_SECONDS", str(12 * 60 * 60)))
+SESSION_CLEANUP_INTERVAL_SECONDS = 5 * 60
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -43,6 +48,7 @@ USER_AGENT = (
 class Session:
     mode: str
     created_at: float
+    last_seen: float = field(default_factory=time.time)
     credentials: dict[str, str] = field(default_factory=dict)
     channels: list[dict[str, Any]] = field(default_factory=list)
     account: dict[str, str] = field(default_factory=dict)
@@ -55,6 +61,7 @@ class Session:
 
 SESSIONS: dict[str, Session] = {}
 DIAGNOSTICS: dict[str, list[dict[str, Any]]] = {}
+LAST_SESSION_CLEANUP = 0.0
 
 
 def normalize_url(raw: str) -> str:
@@ -337,7 +344,7 @@ def guide_info(session: Session) -> dict[str, Any]:
 
 
 def start_epg_load(session_id: str, epg_url: str) -> None:
-    session = SESSIONS.get(session_id)
+    session = get_session(session_id)
     if not session or not epg_url:
         return
 
@@ -345,7 +352,7 @@ def start_epg_load(session_id: str, epg_url: str) -> None:
     session.epg_status = "Loading guide data..."
 
     def worker() -> None:
-        current_session = SESSIONS.get(session_id)
+        current_session = get_session(session_id)
         if not current_session:
             return
         try:
@@ -389,6 +396,32 @@ def record_diagnostic(session_id: str, event: str, url: str = "", **details: Any
     items = DIAGNOSTICS.setdefault(session_id, [])
     items.append(entry)
     del items[:-12]
+
+
+def cleanup_sessions() -> None:
+    global LAST_SESSION_CLEANUP
+    now = time.time()
+    if now - LAST_SESSION_CLEANUP < SESSION_CLEANUP_INTERVAL_SECONDS:
+        return
+
+    LAST_SESSION_CLEANUP = now
+    expired = [session_id for session_id, session in SESSIONS.items() if now - session.last_seen > SESSION_TTL_SECONDS]
+    for session_id in expired:
+        SESSIONS.pop(session_id, None)
+        DIAGNOSTICS.pop(session_id, None)
+
+
+def get_session(session_id: str) -> Session | None:
+    cleanup_sessions()
+    session = SESSIONS.get(session_id)
+    if not session:
+        return None
+    if time.time() - session.last_seen > SESSION_TTL_SECONDS:
+        SESSIONS.pop(session_id, None)
+        DIAGNOSTICS.pop(session_id, None)
+        return None
+    session.last_seen = time.time()
+    return session
 
 
 def xtream_api_url(base_url: str, username: str, password: str, action: str) -> str:
@@ -514,6 +547,26 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         sys.stdout.write("%s - %s\n" % (self.address_string(), format % args))
 
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Content-Security-Policy", self.content_security_policy())
+        super().end_headers()
+
+    def content_security_policy(self) -> str:
+        return (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.jsdelivr.net; "
+            "style-src 'self'; "
+            "img-src 'self' data: http: https:; "
+            "media-src 'self' blob: data:; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
@@ -599,7 +652,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         session_id = params.get("session", [""])[0]
         channel_raw = params.get("channel", [""])[0]
         stream_format = params.get("format", ["hls"])[0]
-        session = SESSIONS.get(session_id)
+        session = get_session(session_id)
 
         if not session:
             self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
@@ -676,7 +729,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
     def handle_proxy(self, query: str) -> None:
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
-        session = SESSIONS.get(session_id) if session_id else None
+        session = get_session(session_id) if session_id else None
         token = params.get("token", [""])[0]
         target_info = session.proxy_targets.get(token) if session and token else None
         target = str(target_info.get("url") or "") if target_info else unquote(params.get("url", [""])[0])
@@ -698,7 +751,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
     def handle_session(self, query: str) -> None:
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
-        session = SESSIONS.get(session_id)
+        session = get_session(session_id)
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
             return
@@ -715,7 +768,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
         media_type = params.get("type", [""])[0]
-        session = SESSIONS.get(session_id)
+        session = get_session(session_id)
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
             return
@@ -733,7 +786,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         session_id = params.get("session", [""])[0]
         item_id = params.get("id", [""])[0]
         extension = params.get("ext", ["mp4"])[0] or "mp4"
-        session = SESSIONS.get(session_id)
+        session = get_session(session_id)
         if not session:
             self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
             return
@@ -826,6 +879,10 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
+        if target.name == "index.html":
+            self.send_header("Cache-Control", "no-store")
+        else:
+            self.send_header("Cache-Control", "public, max-age=300")
         self.end_headers()
         self.wfile.write(target.read_bytes())
 
@@ -840,12 +897,13 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the GreenStreem Web Player backend.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8097)
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), GreenStreemHandler)
     print(f"GreenStreem Web Player running at http://{args.host}:{args.port}")
+    print(f"Session TTL: {SESSION_TTL_SECONDS // 60} minutes")
     server.serve_forever()
 
 
