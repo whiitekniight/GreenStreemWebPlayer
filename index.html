@@ -212,6 +212,24 @@
         <div id="categoryList" class="category-list"></div>
       </aside>
       <div id="drawerScrim" class="drawer-scrim"></div>
+      <div id="itemModal" class="item-modal is-hidden" role="dialog" aria-modal="true" aria-label="Item details">
+        <div class="item-modal-panel">
+          <button id="closeItemModalButton" class="icon-button" type="button" title="Close">×</button>
+          <div class="item-modal-content">
+            <div class="poster-frame modal-poster" id="modalPoster"></div>
+            <div class="item-modal-info">
+              <p id="modalCategory" class="eyebrow">Library</p>
+              <h2 id="modalTitle">Title</h2>
+              <p id="modalMeta" class="muted-copy"></p>
+              <p id="modalPlot" class="modal-plot"></p>
+              <div class="button-row">
+                <button id="playItemButton" class="primary-button" type="button">Play</button>
+                <button id="modalBackButton" class="secondary-button" type="button">Back</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>

@@ -497,6 +497,7 @@ def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
                 "rating": str(item.get("rating") or ""),
                 "year": str(item.get("year") or item.get("releaseDate") or item.get("release_date") or ""),
                 "plot": str(item.get("plot") or item.get("description") or ""),
+                "container": str(item.get("container_extension") or "mp4"),
                 "type": media_type,
             }
         )
@@ -532,6 +533,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/library":
             self.handle_library(parsed.query)
+            return
+        if parsed.path == "/api/vod":
+            self.handle_vod(parsed.query)
             return
         self.serve_static(parsed.path)
 
@@ -723,6 +727,34 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.write_json(load_xtream_library(session, media_type))
         except Exception as exc:
             self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+
+    def handle_vod(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        item_id = params.get("id", [""])[0]
+        extension = params.get("ext", ["mp4"])[0] or "mp4"
+        session = SESSIONS.get(session_id)
+        if not session:
+            self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
+            return
+        if session.mode != "xtream":
+            self.send_error(HTTPStatus.BAD_REQUEST, "VOD requires Xtream login.")
+            return
+
+        base_url = session.credentials.get("serverUrl", "")
+        username = session.credentials.get("username", "")
+        password = session.credentials.get("password", "")
+        if not base_url or not username or not password or not item_id:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Missing VOD details.")
+            return
+
+        safe_ext = re.sub(r"[^A-Za-z0-9]", "", extension) or "mp4"
+        stream_url = f"{base_url}/movie/{quote(username)}/{quote(password)}/{quote(item_id)}.{safe_ext}"
+        try:
+            self.proxy_url(stream_url, session_id=session_id, session=session)
+        except Exception as exc:
+            record_diagnostic(session_id, "vod-error", stream_url, details=str(exc))
+            self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def is_hls_playlist(self, url: str, content_type: str) -> bool:
         lower_type = content_type.lower()

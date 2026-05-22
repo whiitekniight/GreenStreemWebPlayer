@@ -61,6 +61,7 @@ const state = {
   account: {},
   guide: {},
   guidePollTimer: null,
+  selectedLibraryItem: null,
   activeLibraryType: "",
   libraries: {
     movies: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "All" },
@@ -118,6 +119,15 @@ const els = {
   libraryCategorySelect: document.querySelector("#libraryCategorySelect"),
   libraryStatus: document.querySelector("#libraryStatus"),
   libraryGrid: document.querySelector("#libraryGrid"),
+  itemModal: document.querySelector("#itemModal"),
+  closeItemModalButton: document.querySelector("#closeItemModalButton"),
+  modalBackButton: document.querySelector("#modalBackButton"),
+  modalPoster: document.querySelector("#modalPoster"),
+  modalCategory: document.querySelector("#modalCategory"),
+  modalTitle: document.querySelector("#modalTitle"),
+  modalMeta: document.querySelector("#modalMeta"),
+  modalPlot: document.querySelector("#modalPlot"),
+  playItemButton: document.querySelector("#playItemButton"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
 };
@@ -302,7 +312,54 @@ function renderLibraryCard(item) {
 
   body.append(title, meta, plot);
   card.append(poster, body);
+  card.addEventListener("click", () => showItemDetails(item));
   return card;
+}
+
+function showItemDetails(item) {
+  state.selectedLibraryItem = item;
+  els.modalPoster.innerHTML = "";
+  if (item.poster) {
+    const img = document.createElement("img");
+    img.src = item.poster;
+    img.alt = "";
+    els.modalPoster.appendChild(img);
+  } else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "poster-placeholder";
+    placeholder.textContent = item.title.slice(0, 1).toUpperCase();
+    els.modalPoster.appendChild(placeholder);
+  }
+  els.modalCategory.textContent = item.category || "Library";
+  els.modalTitle.textContent = item.title;
+  els.modalMeta.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ");
+  els.modalPlot.textContent = item.plot || "No description available.";
+  els.playItemButton.disabled = item.type !== "movies";
+  els.playItemButton.textContent = item.type === "movies" ? "Play" : "Episodes Soon";
+  els.itemModal.classList.remove("is-hidden");
+}
+
+function closeItemDetails() {
+  els.itemModal.classList.add("is-hidden");
+}
+
+function playLibraryItem(item) {
+  if (item.type !== "movies") {
+    els.libraryStatus.textContent = "Series episode browsing is next.";
+    return;
+  }
+
+  const playUrl = `/api/vod?session=${encodeURIComponent(state.sessionId)}&id=${encodeURIComponent(item.id)}&ext=${encodeURIComponent(item.container || "mp4")}`;
+  state.activeChannelIndex = -1;
+  state.activeChannel = null;
+  els.currentCategoryLabel.textContent = item.category || "Movies";
+  els.currentChannelTitle.textContent = item.title;
+  els.nowTitle.textContent = item.title;
+  els.nextTitle.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
+  els.nowTime.textContent = "Loading movie...";
+  showSection("live");
+  loadStream(playUrl, item.container === "m3u8" ? "hls" : "file");
+  closeItemDetails();
 }
 
 function setLoginMode(mode) {
@@ -799,6 +856,13 @@ els.libraryCategorySelect.addEventListener("change", () => {
   if (!library) return;
   library.selectedCategory = els.libraryCategorySelect.value;
   renderLibrary();
+});
+els.closeItemModalButton.addEventListener("click", closeItemDetails);
+els.modalBackButton.addEventListener("click", closeItemDetails);
+els.playItemButton.addEventListener("click", () => {
+  if (state.selectedLibraryItem) {
+    playLibraryItem(state.selectedLibraryItem);
+  }
 });
 
 els.searchButton.addEventListener("click", () => {

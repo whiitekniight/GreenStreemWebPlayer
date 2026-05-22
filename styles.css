@@ -504,6 +504,54 @@ video {
   display: block;
 }
 
+.item-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.item-modal-panel {
+  position: relative;
+  width: min(920px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f171b;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.item-modal-panel > .icon-button {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.item-modal-content {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 24px;
+  padding: 28px;
+}
+
+.modal-poster {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.item-modal-info h2 {
+  margin: 0 46px 12px 0;
+  font-size: clamp(30px, 5vw, 58px);
+}
+
+.modal-plot {
+  color: var(--text);
+  line-height: 1.5;
+}
+
 .placeholder-view {
   text-align: center;
 }
