@@ -638,7 +638,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.write_json({"ok": True})
             return
         if parsed.path == "/api/config":
-            self.write_json({"defaultServerConfigured": bool(DEFAULT_SERVER_URL)})
+            self.write_json({"defaultServerConfigured": False})
             return
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
@@ -658,7 +658,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/vod":
             self.handle_vod(parsed.query)
             return
-        self.serve_static(parsed.path, parsed.query)
+        self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -685,7 +685,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 if epg_url:
                     start_epg_load(session_id, epg_url)
             elif mode == "xtream":
-                base_url = DEFAULT_SERVER_URL or normalize_url(str(payload.get("serverUrl") or ""))
+                base_url = normalize_url(str(payload.get("serverUrl") or ""))
                 username = str(payload.get("username") or "").strip()
                 password = str(payload.get("password") or "")
                 if not base_url or not username or not password:
@@ -949,7 +949,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
         return f"/api/proxy?url={quote(url, safe='')}"
 
-    def serve_static(self, request_path: str, query: str = "") -> None:
+    def serve_static(self, request_path: str) -> None:
         relative = request_path.lstrip("/") or "index.html"
         target = (ROOT / relative).resolve()
         if ROOT not in target.parents and target != ROOT:
@@ -966,13 +966,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "public, max-age=300")
         self.end_headers()
-        body = target.read_bytes()
-        admin_override = parse_qs(query).get("admin", [""])[0] == "1"
-        if target.name == "index.html" and DEFAULT_SERVER_URL and not admin_override:
-            text = body.decode("utf-8")
-            text = text.replace('id="serverUrlField"', 'id="serverUrlField" class="is-hidden"', 1)
-            body = text.encode("utf-8")
-        self.wfile.write(body)
+        self.wfile.write(target.read_bytes())
 
     def write_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")

@@ -48,7 +48,6 @@ const state = {
   section: "login",
   sessionId: "",
   defaultServerConfigured: false,
-  allowServerOverride: new URLSearchParams(window.location.search).get("admin") === "1",
   channels: [...demoChannels],
   activeCategory: "All Channels",
   activeChannelIndex: -1,
@@ -156,12 +155,10 @@ async function loadPublicConfig() {
     const response = await fetch("/api/config");
     const config = await response.json();
     state.defaultServerConfigured = Boolean(config.defaultServerConfigured);
-    els.serverUrlField.classList.toggle("is-hidden", state.defaultServerConfigured && !state.allowServerOverride);
-    if (state.defaultServerConfigured && !state.allowServerOverride) {
+    els.serverUrlField.classList.toggle("is-hidden", state.defaultServerConfigured);
+    if (state.defaultServerConfigured) {
       els.serverUrlInput.value = "";
       setStatus("GreenStreem server is configured. Enter your playlist username and password.");
-    } else if (state.defaultServerConfigured) {
-      setStatus("Admin override enabled. Enter the exact server URL to test.");
     }
   } catch {
     // Keep the manual server field available if config cannot load.
@@ -900,7 +897,7 @@ els.loginForm.addEventListener("submit", async (event) => {
         }
       : {
           mode: "xtream",
-          serverUrl: state.defaultServerConfigured && !state.allowServerOverride ? "" : els.serverUrlInput.value.trim(),
+          serverUrl: els.serverUrlInput.value.trim(),
           username: document.querySelector("#usernameInput").value.trim(),
           password: document.querySelector("#passwordInput").value,
         };
