@@ -38,6 +38,7 @@ class Session:
 
 
 SESSIONS: dict[str, Session] = {}
+DIAGNOSTICS: dict[str, list[dict[str, Any]]] = {}
 
 
 def normalize_url(raw: str) -> str:
@@ -129,6 +130,33 @@ def public_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return safe_channels
 
 
+def safe_url_info(url: str) -> dict[str, str]:
+    parsed = urlparse(url)
+    path = parsed.path or ""
+    suffix = Path(path).suffix.lower()
+    return {
+        "host": parsed.netloc,
+        "type": suffix or "stream",
+    }
+
+
+def record_diagnostic(session_id: str, event: str, url: str = "", **details: Any) -> None:
+    if not session_id:
+        return
+
+    entry: dict[str, Any] = {
+        "time": time.strftime("%H:%M:%S"),
+        "event": event,
+    }
+    if url:
+        entry.update(safe_url_info(url))
+    entry.update(details)
+
+    items = DIAGNOSTICS.setdefault(session_id, [])
+    items.append(entry)
+    del items[:-12]
+
+
 def xtream_api_url(base_url: str, username: str, password: str, action: str) -> str:
     query = urlencode({"username": username, "password": password, "action": action})
     return f"{base_url}/player_api.php?{query}"
@@ -196,6 +224,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/proxy":
             self.handle_proxy(parsed.query)
             return
+        if parsed.path == "/api/diagnostics":
+            self.handle_diagnostics(parsed.query)
+            return
         self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -256,26 +287,39 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             stream_url = str(channel.get("url") or "")
             if not stream_url:
                 raise ValueError("Channel has no stream URL.")
-            self.proxy_url(stream_url)
+            self.proxy_url(stream_url, session_id=session_id)
         except Exception as exc:
+            record_diagnostic(session_id, "stream-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
-    def proxy_url(self, url: str) -> None:
+    def proxy_url(self, url: str, *, session_id: str = "") -> None:
         headers = {"User-Agent": USER_AGENT}
         range_header = self.headers.get("Range")
         if range_header:
             headers["Range"] = range_header
 
         request = Request(url, headers=headers)
-        with urlopen(request, timeout=20) as response:
+        record_diagnostic(session_id, "request", url)
+        try:
+            response = urlopen(request, timeout=20)
+        except HTTPError as exc:
+            record_diagnostic(session_id, "http-error", url, status=exc.code, reason=exc.reason)
+            raise
+        except URLError as exc:
+            record_diagnostic(session_id, "url-error", url, reason=str(exc.reason))
+            raise
+
+        with response:
             content_type = response.headers.get("Content-Type", "application/octet-stream")
+            status = getattr(response, "status", HTTPStatus.OK)
+            record_diagnostic(session_id, "response", url, status=status, contentType=content_type)
             if self.is_hls_playlist(url, content_type):
                 raw = response.read(MAX_PLAYLIST_BYTES + 1)
                 if len(raw) > MAX_PLAYLIST_BYTES:
                     raise ValueError("HLS playlist is too large for this prototype build.")
                 charset = response.headers.get_content_charset() or "utf-8"
                 playlist = raw.decode(charset, errors="replace")
-                rewritten = self.rewrite_hls_playlist(playlist, url)
+                rewritten = self.rewrite_hls_playlist(playlist, url, session_id)
                 body = rewritten.encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/vnd.apple.mpegurl")
@@ -285,7 +329,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
 
-            self.send_response(getattr(response, "status", HTTPStatus.OK))
+            self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Access-Control-Allow-Origin", "*")
             for header in ("Content-Length", "Content-Range", "Accept-Ranges"):
@@ -302,13 +346,20 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
     def handle_proxy(self, query: str) -> None:
         params = parse_qs(query)
         target = unquote(params.get("url", [""])[0])
+        session_id = params.get("session", [""])[0]
         if not target.startswith(("http://", "https://")):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid proxy URL.")
             return
         try:
-            self.proxy_url(target)
+            self.proxy_url(target, session_id=session_id)
         except Exception as exc:
+            record_diagnostic(session_id, "proxy-error", target, details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def handle_diagnostics(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        self.write_json({"events": DIAGNOSTICS.get(session_id, [])})
 
     def is_hls_playlist(self, url: str, content_type: str) -> bool:
         lower_type = content_type.lower()
@@ -319,7 +370,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             or lower_path.endswith(".m3u8")
         )
 
-    def rewrite_hls_playlist(self, playlist: str, base_url: str) -> str:
+    def rewrite_hls_playlist(self, playlist: str, base_url: str, session_id: str) -> str:
         output: list[str] = []
         for line in playlist.splitlines():
             stripped = line.strip()
@@ -328,22 +379,23 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 continue
 
             if stripped.startswith("#"):
-                output.append(self.rewrite_hls_tag(line, base_url))
+                output.append(self.rewrite_hls_tag(line, base_url, session_id))
                 continue
 
-            output.append(self.proxy_link(urljoin(base_url, stripped)))
+            output.append(self.proxy_link(urljoin(base_url, stripped), session_id))
 
         return "\n".join(output) + "\n"
 
-    def rewrite_hls_tag(self, line: str, base_url: str) -> str:
+    def rewrite_hls_tag(self, line: str, base_url: str, session_id: str) -> str:
         def replace_uri(match: re.Match[str]) -> str:
             absolute = urljoin(base_url, match.group(1))
-            return f'URI="{self.proxy_link(absolute)}"'
+            return f'URI="{self.proxy_link(absolute, session_id)}"'
 
         return re.sub(r'URI="([^"]+)"', replace_uri, line)
 
-    def proxy_link(self, url: str) -> str:
-        return f"/api/proxy?url={quote(url, safe='')}"
+    def proxy_link(self, url: str, session_id: str) -> str:
+        session_param = f"&session={quote(session_id)}" if session_id else ""
+        return f"/api/proxy?url={quote(url, safe='')}{session_param}"
 
     def serve_static(self, request_path: str) -> None:
         relative = request_path.lstrip("/") or "index.html"

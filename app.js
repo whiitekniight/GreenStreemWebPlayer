@@ -265,6 +265,7 @@ function loadStream(playUrl, streamType) {
     });
     state.hls.on(Hls.Events.ERROR, (_event, data) => {
       els.nowTime.textContent = `Stream issue: ${data.details || data.type}`;
+      showLatestDiagnostics(data.details || data.type);
       if (data.fatal) {
         els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
         state.hls.destroy();
@@ -330,7 +331,30 @@ els.videoPlayer.addEventListener("error", () => {
         ? "Network error while loading stream."
         : "Browser could not play this stream.";
   els.nowTime.textContent = message;
+  showLatestDiagnostics(message);
 });
+
+async function showLatestDiagnostics(prefix) {
+  if (!state.sessionId || !apiAvailable) return;
+
+  try {
+    const response = await fetch(`/api/diagnostics?session=${encodeURIComponent(state.sessionId)}`);
+    const result = await response.json();
+    const latest = [...(result.events || [])].reverse().find((event) => event.status || event.reason || event.details);
+    if (!latest) return;
+
+    const bits = [
+      prefix,
+      latest.status ? `HTTP ${latest.status}` : "",
+      latest.reason || latest.details || "",
+      latest.host ? `from ${latest.host}` : "",
+      latest.type ? latest.type : "",
+    ].filter(Boolean);
+    els.nowTime.textContent = bits.join(" · ");
+  } catch {
+    // Diagnostics are helpful but should never interrupt playback.
+  }
+}
 
 function toggleFavorite(name) {
   if (state.favorites.has(name)) {
