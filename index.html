@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GreenStreem Web Player</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">GS</span>
+          <div>
+            <strong>GreenStreem</strong>
+            <span>Web Player</span>
+          </div>
+        </div>
+        <nav class="top-actions" aria-label="Player actions">
+          <button id="openCategoriesButton" class="icon-button" type="button" title="Categories">☰</button>
+          <button id="searchButton" class="icon-button" type="button" title="Search">⌕</button>
+          <button id="fullscreenButton" class="icon-button" type="button" title="Fullscreen">⛶</button>
+        </nav>
+      </header>
+
+      <main>
+        <section id="loginView" class="login-view">
+          <form id="loginForm" class="login-panel">
+            <p class="eyebrow">greenstreemlabs.com/player</p>
+            <h1>Bring your IPTV to the browser.</h1>
+            <div class="mode-tabs" role="tablist" aria-label="Login type">
+              <button class="mode-tab is-active" type="button" data-mode="xtream">Xtream</button>
+              <button class="mode-tab" type="button" data-mode="m3u">M3U</button>
+            </div>
+
+            <div id="xtreamFields" class="field-grid">
+              <label>
+                Server URL
+                <input id="serverUrlInput" autocomplete="url" placeholder="https://example.com">
+              </label>
+              <label>
+                Username
+                <input id="usernameInput" autocomplete="username" placeholder="playlist username">
+              </label>
+              <label>
+                Password
+                <input id="passwordInput" type="password" autocomplete="current-password" placeholder="playlist password">
+              </label>
+            </div>
+
+            <div id="m3uFields" class="field-grid is-hidden">
+              <label>
+                M3U playlist URL
+                <input id="m3uUrlInput" autocomplete="url" placeholder="https://example.com/get.php?...">
+              </label>
+              <label>
+                EPG XMLTV URL
+                <input id="epgUrlInput" autocomplete="url" placeholder="optional guide.xml URL">
+              </label>
+            </div>
+
+            <div class="login-row">
+              <button class="primary-button" type="submit">Open Player</button>
+              <button id="demoButton" class="secondary-button" type="button">Try Demo</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="homeView" class="home-view is-hidden" aria-label="Main menu">
+          <button class="home-link" type="button" data-section="live">Live Channels</button>
+          <button class="home-link" type="button" data-section="movies">Movies</button>
+          <button class="home-link" type="button" data-section="series">TV Series</button>
+          <button class="home-link" type="button" data-section="account">Account Info</button>
+        </section>
+
+        <section id="playerView" class="player-view is-hidden">
+          <aside class="preview-pane">
+            <div class="section-title">
+              <span id="currentCategoryLabel">All Channels</span>
+              <strong id="currentChannelTitle">Choose a channel</strong>
+            </div>
+            <video id="videoPlayer" controls playsinline></video>
+            <div class="now-next">
+              <p id="nowTitle">No program selected</p>
+              <span id="nowTime">Guide data will appear here when connected.</span>
+            </div>
+          </aside>
+
+          <section class="channel-pane">
+            <div class="channel-toolbar">
+              <input id="channelSearchInput" placeholder="Search channels...">
+              <button id="favoritesOnlyButton" class="chip-button" type="button">Favorites</button>
+            </div>
+            <div id="channelList" class="channel-list" aria-label="Channels"></div>
+          </section>
+        </section>
+
+        <section id="placeholderView" class="placeholder-view is-hidden">
+          <h2 id="placeholderTitle">Coming Soon</h2>
+          <p id="placeholderCopy">This section is ready for the next build pass.</p>
+          <button class="secondary-button" type="button" data-section="home">Back</button>
+        </section>
+      </main>
+
+      <aside id="categoryDrawer" class="category-drawer" aria-label="Categories">
+        <div class="drawer-header">
+          <strong>Categories</strong>
+          <button id="closeCategoriesButton" class="icon-button dark" type="button" title="Close">×</button>
+        </div>
+        <input id="categorySearchInput" placeholder="Search category...">
+        <div id="categoryList" class="category-list"></div>
+      </aside>
+      <div id="drawerScrim" class="drawer-scrim"></div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

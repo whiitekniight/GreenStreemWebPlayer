@@ -1,0 +1,331 @@
+const demoChannels = [
+  {
+    name: "US A&E",
+    category: "US | Entertainment",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/d/df/A%26E_Network_logo.svg",
+    url: "",
+    now: "Live preview ready",
+  },
+  {
+    name: "US ABC New York",
+    category: "US | News",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/2/2f/ABC-2021-LOGO.svg",
+    url: "",
+    now: "Guide pending",
+  },
+  {
+    name: "US AMC East",
+    category: "US | Movies",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/3/34/AMC_logo_2019.svg",
+    url: "",
+    now: "Movie block",
+  },
+  {
+    name: "US Bravo East",
+    category: "US | Entertainment",
+    logo: "",
+    url: "",
+    now: "No Information",
+  },
+  {
+    name: "US ESPN",
+    category: "US | Sports",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/2/2f/ESPN_wordmark.svg",
+    url: "",
+    now: "SportsCenter",
+  },
+  {
+    name: "UK | Sky Store",
+    category: "UK | Movies",
+    logo: "",
+    url: "",
+    now: "Featured",
+  },
+];
+
+const state = {
+  mode: "xtream",
+  section: "login",
+  channels: [...demoChannels],
+  activeCategory: "All Channels",
+  activeChannelIndex: -1,
+  favoritesOnly: false,
+  favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
+};
+
+const els = {
+  loginView: document.querySelector("#loginView"),
+  homeView: document.querySelector("#homeView"),
+  playerView: document.querySelector("#playerView"),
+  placeholderView: document.querySelector("#placeholderView"),
+  loginForm: document.querySelector("#loginForm"),
+  modeTabs: document.querySelectorAll(".mode-tab"),
+  xtreamFields: document.querySelector("#xtreamFields"),
+  m3uFields: document.querySelector("#m3uFields"),
+  demoButton: document.querySelector("#demoButton"),
+  channelList: document.querySelector("#channelList"),
+  categoryList: document.querySelector("#categoryList"),
+  channelSearchInput: document.querySelector("#channelSearchInput"),
+  categorySearchInput: document.querySelector("#categorySearchInput"),
+  currentCategoryLabel: document.querySelector("#currentCategoryLabel"),
+  currentChannelTitle: document.querySelector("#currentChannelTitle"),
+  nowTitle: document.querySelector("#nowTitle"),
+  nowTime: document.querySelector("#nowTime"),
+  videoPlayer: document.querySelector("#videoPlayer"),
+  categoryDrawer: document.querySelector("#categoryDrawer"),
+  drawerScrim: document.querySelector("#drawerScrim"),
+  openCategoriesButton: document.querySelector("#openCategoriesButton"),
+  closeCategoriesButton: document.querySelector("#closeCategoriesButton"),
+  fullscreenButton: document.querySelector("#fullscreenButton"),
+  searchButton: document.querySelector("#searchButton"),
+  favoritesOnlyButton: document.querySelector("#favoritesOnlyButton"),
+  placeholderTitle: document.querySelector("#placeholderTitle"),
+  placeholderCopy: document.querySelector("#placeholderCopy"),
+};
+
+function showSection(section) {
+  state.section = section;
+  els.loginView.classList.toggle("is-hidden", section !== "login");
+  els.homeView.classList.toggle("is-hidden", section !== "home");
+  els.playerView.classList.toggle("is-hidden", section !== "live");
+  els.placeholderView.classList.toggle("is-hidden", !["movies", "series", "account"].includes(section));
+
+  if (section === "live") {
+    renderCategories();
+    renderChannels();
+  }
+
+  if (section === "movies" || section === "series" || section === "account") {
+    const label = section === "movies" ? "Movies" : section === "series" ? "TV Series" : "Account Info";
+    els.placeholderTitle.textContent = label;
+    els.placeholderCopy.textContent = `${label} is stubbed in so the flow is ready for the next pass.`;
+  }
+}
+
+function setLoginMode(mode) {
+  state.mode = mode;
+  els.modeTabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.mode === mode));
+  els.xtreamFields.classList.toggle("is-hidden", mode !== "xtream");
+  els.m3uFields.classList.toggle("is-hidden", mode !== "m3u");
+}
+
+function categories() {
+  const names = new Set(["All Channels", "Only Favorites"]);
+  state.channels.forEach((channel) => names.add(channel.category || "Uncategorized"));
+  return [...names].sort((a, b) => {
+    if (a === "All Channels") return -1;
+    if (b === "All Channels") return 1;
+    if (a === "Only Favorites") return -1;
+    if (b === "Only Favorites") return 1;
+    return a.localeCompare(b);
+  });
+}
+
+function visibleChannels() {
+  const search = els.channelSearchInput.value.trim().toLowerCase();
+  return state.channels.filter((channel, index) => {
+    const favorite = state.favorites.has(channel.name);
+    const categoryMatch =
+      state.activeCategory === "All Channels" ||
+      state.activeCategory === channel.category ||
+      state.activeCategory === "Only Favorites";
+    const favoriteMatch = !state.favoritesOnly && state.activeCategory !== "Only Favorites" ? true : favorite;
+    const searchMatch = !search || channel.name.toLowerCase().includes(search);
+    return categoryMatch && favoriteMatch && searchMatch;
+  });
+}
+
+function renderCategories() {
+  const search = els.categorySearchInput.value.trim().toLowerCase();
+  els.categoryList.innerHTML = "";
+
+  categories()
+    .filter((category) => !search || category.toLowerCase().includes(search))
+    .forEach((category) => {
+      const button = document.createElement("button");
+      button.className = "category-item";
+      button.classList.toggle("is-active", category === state.activeCategory);
+      button.type = "button";
+      button.textContent = category;
+      button.addEventListener("click", () => {
+        state.activeCategory = category;
+        state.favoritesOnly = category === "Only Favorites";
+        els.favoritesOnlyButton.classList.toggle("is-active", state.favoritesOnly);
+        els.currentCategoryLabel.textContent = category;
+        closeDrawer();
+        renderCategories();
+        renderChannels();
+      });
+      els.categoryList.appendChild(button);
+    });
+}
+
+function renderChannels() {
+  els.channelList.innerHTML = "";
+  const list = visibleChannels();
+
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No channels found.";
+    els.channelList.appendChild(empty);
+    return;
+  }
+
+  list.forEach((channel) => {
+    const originalIndex = state.channels.indexOf(channel);
+    const row = document.createElement("button");
+    row.className = "channel-row";
+    row.classList.toggle("is-active", originalIndex === state.activeChannelIndex);
+    row.type = "button";
+
+    const logo = channel.logo
+      ? `<img class="channel-logo" src="${channel.logo}" alt="">`
+      : `<span class="channel-logo" aria-hidden="true"></span>`;
+
+    row.innerHTML = `
+      <span class="channel-number">${originalIndex + 1}</span>
+      ${logo}
+      <span class="channel-name">${channel.name}</span>
+      <span class="favorite-button ${state.favorites.has(channel.name) ? "is-favorite" : ""}" aria-label="Favorite">☆</span>
+    `;
+
+    row.addEventListener("click", (event) => {
+      if (event.target.classList.contains("favorite-button")) {
+        toggleFavorite(channel.name);
+        return;
+      }
+      playChannel(originalIndex);
+    });
+
+    els.channelList.appendChild(row);
+  });
+}
+
+function playChannel(index) {
+  const channel = state.channels[index];
+  state.activeChannelIndex = index;
+  els.currentChannelTitle.textContent = channel.name;
+  els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
+  els.nowTitle.textContent = channel.now || "No Information";
+  els.nowTime.textContent = channel.url ? "Attempting browser playback." : "Demo channel has no live stream URL yet.";
+
+  if (channel.url) {
+    els.videoPlayer.src = channel.url;
+    els.videoPlayer.play().catch(() => {
+      els.nowTime.textContent = "Browser blocked autoplay or the stream needs backend proxy support.";
+    });
+  } else {
+    els.videoPlayer.removeAttribute("src");
+    els.videoPlayer.load();
+  }
+
+  renderChannels();
+}
+
+function toggleFavorite(name) {
+  if (state.favorites.has(name)) {
+    state.favorites.delete(name);
+  } else {
+    state.favorites.add(name);
+  }
+  localStorage.setItem("greenstreem:favorites", JSON.stringify([...state.favorites]));
+  renderChannels();
+}
+
+function parseM3u(text) {
+  const lines = text.split(/\r?\n/);
+  const channels = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith("#EXTINF")) continue;
+
+    const nextUrl = (lines[i + 1] || "").trim();
+    const name = line.split(",").pop()?.trim() || "Untitled Channel";
+    const category = getAttribute(line, "group-title") || "Uncategorized";
+    const logo = getAttribute(line, "tvg-logo") || "";
+
+    if (nextUrl && !nextUrl.startsWith("#")) {
+      channels.push({ name, category, logo, url: nextUrl, now: "Guide pending" });
+    }
+  }
+
+  return channels;
+}
+
+function getAttribute(line, attribute) {
+  const match = line.match(new RegExp(`${attribute}="([^"]*)"`));
+  return match ? match[1] : "";
+}
+
+function openDrawer() {
+  renderCategories();
+  els.categoryDrawer.classList.add("is-open");
+  els.drawerScrim.classList.add("is-open");
+}
+
+function closeDrawer() {
+  els.categoryDrawer.classList.remove("is-open");
+  els.drawerScrim.classList.remove("is-open");
+}
+
+els.modeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => setLoginMode(tab.dataset.mode));
+});
+
+els.loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (state.mode === "m3u") {
+    const m3uUrl = document.querySelector("#m3uUrlInput").value.trim();
+    if (m3uUrl) {
+      try {
+        const response = await fetch(m3uUrl);
+        const playlistText = await response.text();
+        const parsed = parseM3u(playlistText);
+        if (parsed.length) {
+          state.channels = parsed;
+        }
+      } catch {
+        alert("The browser could not load that M3U directly. The backend proxy will handle this in the server build.");
+      }
+    }
+  }
+
+  showSection("home");
+});
+
+els.demoButton.addEventListener("click", () => {
+  state.channels = [...demoChannels];
+  showSection("home");
+});
+
+document.querySelectorAll("[data-section]").forEach((button) => {
+  button.addEventListener("click", () => showSection(button.dataset.section));
+});
+
+els.openCategoriesButton.addEventListener("click", openDrawer);
+els.closeCategoriesButton.addEventListener("click", closeDrawer);
+els.drawerScrim.addEventListener("click", closeDrawer);
+els.categorySearchInput.addEventListener("input", renderCategories);
+els.channelSearchInput.addEventListener("input", renderChannels);
+
+els.searchButton.addEventListener("click", () => {
+  showSection("live");
+  els.channelSearchInput.focus();
+});
+
+els.favoritesOnlyButton.addEventListener("click", () => {
+  state.favoritesOnly = !state.favoritesOnly;
+  els.favoritesOnlyButton.classList.toggle("is-active", state.favoritesOnly);
+  renderChannels();
+});
+
+els.fullscreenButton.addEventListener("click", () => {
+  if (els.videoPlayer.requestFullscreen) {
+    els.videoPlayer.requestFullscreen();
+  }
+});
+
+showSection("login");
