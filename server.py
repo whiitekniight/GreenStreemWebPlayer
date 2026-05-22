@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -95,11 +95,38 @@ def parse_m3u(text: str, session_id: str) -> list[dict[str, Any]]:
                 "logo": attr(line, "tvg-logo"),
                 "url": stream_url,
                 "playUrl": f"/api/stream?session={quote(session_id)}&channel={channel_index}",
-                "now": "Guide pending",
+                "streamType": guess_stream_type(stream_url),
+                "now": "EPG not connected yet",
             }
         )
 
     return channels
+
+
+def guess_stream_type(url: str) -> str:
+    lower_path = urlparse(url).path.lower()
+    if lower_path.endswith(".m3u8"):
+        return "hls"
+    if lower_path.endswith((".mp4", ".webm", ".ogg")):
+        return "file"
+    return "direct"
+
+
+def public_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    safe_channels: list[dict[str, Any]] = []
+    for channel in channels:
+        safe_channels.append(
+            {
+                "name": channel.get("name") or "Untitled Channel",
+                "category": channel.get("category") or "Uncategorized",
+                "logo": channel.get("logo") or "",
+                "playUrl": channel.get("playUrl") or "",
+                "streamType": channel.get("streamType") or guess_stream_type(str(channel.get("url") or "")),
+                "hasStream": bool(channel.get("url")),
+                "now": channel.get("now") or "EPG not connected yet",
+            }
+        )
+    return safe_channels
 
 
 def xtream_api_url(base_url: str, username: str, password: str, action: str) -> str:
@@ -145,7 +172,8 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
                 "logo": str(item.get("stream_icon") or ""),
                 "url": stream_url,
                 "playUrl": f"/api/stream?session={quote(session_id)}&channel={channel_index}",
-                "now": "Guide pending",
+                "streamType": guess_stream_type(stream_url),
+                "now": "EPG not connected yet",
             }
         )
 
@@ -165,6 +193,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
+            return
+        if parsed.path == "/api/proxy":
+            self.handle_proxy(parsed.query)
             return
         self.serve_static(parsed.path)
 
@@ -205,7 +236,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             else:
                 raise ValueError("Choose Xtream or M3U login.")
 
-            self.write_json({"sessionId": session_id, "channels": session.channels})
+            self.write_json({"sessionId": session_id, "channels": public_channels(session.channels)})
         except (HTTPError, URLError) as exc:
             self.write_json({"error": f"Provider request failed: {exc}"}, HTTPStatus.BAD_GATEWAY)
         except Exception as exc:
@@ -234,6 +265,22 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         request = Request(url, headers={"User-Agent": USER_AGENT})
         with urlopen(request, timeout=20) as response:
             content_type = response.headers.get("Content-Type", "application/octet-stream")
+            if self.is_hls_playlist(url, content_type):
+                raw = response.read(MAX_PLAYLIST_BYTES + 1)
+                if len(raw) > MAX_PLAYLIST_BYTES:
+                    raise ValueError("HLS playlist is too large for this prototype build.")
+                charset = response.headers.get_content_charset() or "utf-8"
+                playlist = raw.decode(charset, errors="replace")
+                rewritten = self.rewrite_hls_playlist(playlist, url)
+                body = rewritten.encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -243,6 +290,52 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+
+    def handle_proxy(self, query: str) -> None:
+        params = parse_qs(query)
+        target = unquote(params.get("url", [""])[0])
+        if not target.startswith(("http://", "https://")):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid proxy URL.")
+            return
+        try:
+            self.proxy_url(target)
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def is_hls_playlist(self, url: str, content_type: str) -> bool:
+        lower_type = content_type.lower()
+        lower_path = urlparse(url).path.lower()
+        return (
+            "mpegurl" in lower_type
+            or "application/vnd.apple.mpegurl" in lower_type
+            or lower_path.endswith(".m3u8")
+        )
+
+    def rewrite_hls_playlist(self, playlist: str, base_url: str) -> str:
+        output: list[str] = []
+        for line in playlist.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                output.append(line)
+                continue
+
+            if stripped.startswith("#"):
+                output.append(self.rewrite_hls_tag(line, base_url))
+                continue
+
+            output.append(self.proxy_link(urljoin(base_url, stripped)))
+
+        return "\n".join(output) + "\n"
+
+    def rewrite_hls_tag(self, line: str, base_url: str) -> str:
+        def replace_uri(match: re.Match[str]) -> str:
+            absolute = urljoin(base_url, match.group(1))
+            return f'URI="{self.proxy_link(absolute)}"'
+
+        return re.sub(r'URI="([^"]+)"', replace_uri, line)
+
+    def proxy_link(self, url: str) -> str:
+        return f"/api/proxy?url={quote(url, safe='')}"
 
     def serve_static(self, request_path: str) -> None:
         relative = request_path.lstrip("/") or "index.html"

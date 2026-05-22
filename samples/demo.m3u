@@ -1,6 +1,6 @@
 #EXTM3U
-#EXTINF:-1 tvg-id="greenstreem.demo.1" tvg-name="GreenStreem Demo News" tvg-logo="" group-title="Demo | News",GreenStreem Demo News
-https://example.com/demo-news.m3u8
+#EXTINF:-1 tvg-id="greenstreem.demo.1" tvg-name="GreenStreem Demo Clip" tvg-logo="" group-title="Demo | Video",GreenStreem Demo Clip
+https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4
 #EXTINF:-1 tvg-id="greenstreem.demo.2" tvg-name="GreenStreem Demo Movies" tvg-logo="" group-title="Demo | Movies",GreenStreem Demo Movies
 https://example.com/demo-movies.m3u8
 #EXTINF:-1 tvg-id="greenstreem.demo.3" tvg-name="GreenStreem Demo Sports" tvg-logo="" group-title="Demo | Sports",GreenStreem Demo Sports

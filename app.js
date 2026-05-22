@@ -1,10 +1,10 @@
 const demoChannels = [
   {
-    name: "US A&E",
-    category: "US | Entertainment",
+    name: "GreenStreem Demo Clip",
+    category: "Demo | Video",
     logo: "https://upload.wikimedia.org/wikipedia/commons/d/df/A%26E_Network_logo.svg",
-    url: "",
-    now: "Live preview ready",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    now: "Browser playback test",
   },
   {
     name: "US ABC New York",
@@ -52,6 +52,7 @@ const state = {
   activeChannelIndex: -1,
   favoritesOnly: false,
   favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
+  hls: null,
 };
 
 const els = {
@@ -229,20 +230,70 @@ function playChannel(index) {
   state.activeChannelIndex = index;
   els.currentChannelTitle.textContent = channel.name;
   els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
-  els.nowTitle.textContent = channel.now || "No Information";
-  els.nowTime.textContent = channel.url ? "Attempting browser playback." : "Demo channel has no live stream URL yet.";
+  els.nowTitle.textContent = channel.now || "EPG not connected yet";
+  const streamUrl = channel.playUrl || channel.url;
+  const hasStream = channel.hasStream || Boolean(streamUrl);
+  els.nowTime.textContent = hasStream ? "Loading stream..." : "Demo channel has no live stream URL yet.";
 
-  if (channel.url) {
-    els.videoPlayer.src = channel.playUrl || channel.url;
-    els.videoPlayer.play().catch(() => {
-      els.nowTime.textContent = "Browser blocked autoplay or the stream needs backend proxy support.";
-    });
+  if (hasStream) {
+    loadStream(streamUrl, channel.streamType || channel.url || "");
   } else {
-    els.videoPlayer.removeAttribute("src");
-    els.videoPlayer.load();
+    clearPlayer();
   }
 
   renderChannels();
+}
+
+function clearPlayer() {
+  if (state.hls) {
+    state.hls.destroy();
+    state.hls = null;
+  }
+  els.videoPlayer.pause();
+  els.videoPlayer.removeAttribute("src");
+  els.videoPlayer.load();
+}
+
+function loadStream(playUrl, streamType) {
+  clearPlayer();
+  const looksLikeHls = streamType === "hls" || /\.m3u8($|\?)/i.test(playUrl);
+
+  if (looksLikeHls && window.Hls && window.Hls.isSupported()) {
+    state.hls = new Hls({ lowLatencyMode: true });
+    state.hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.fatal) {
+        els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
+        state.hls.destroy();
+        state.hls = null;
+      }
+    });
+    state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      els.nowTime.textContent = "HLS stream ready.";
+      attemptPlay();
+    });
+    state.hls.loadSource(playUrl);
+    state.hls.attachMedia(els.videoPlayer);
+    return;
+  }
+
+  if (looksLikeHls && els.videoPlayer.canPlayType("application/vnd.apple.mpegurl")) {
+    els.videoPlayer.src = playUrl;
+    els.nowTime.textContent = "Native HLS stream ready.";
+    attemptPlay();
+    return;
+  }
+
+  els.videoPlayer.src = playUrl;
+  els.nowTime.textContent = looksLikeHls
+    ? "HLS helper did not load. Refresh the page and try again."
+    : "Trying direct stream playback. Some .ts streams need conversion.";
+  attemptPlay();
+}
+
+function attemptPlay() {
+  els.videoPlayer.play().catch(() => {
+    els.nowTime.textContent = "Stream loaded. Press play in the video window.";
+  });
 }
 
 function toggleFavorite(name) {
@@ -269,7 +320,7 @@ function parseM3u(text) {
     const logo = getAttribute(line, "tvg-logo") || "";
 
     if (nextUrl && !nextUrl.startsWith("#")) {
-      channels.push({ name, category, logo, url: nextUrl, now: "Guide pending" });
+      channels.push({ name, category, logo, url: nextUrl, now: "EPG not connected yet" });
     }
   }
 

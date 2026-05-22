@@ -15,6 +15,8 @@ backend is added.
   and favorites
 - Local M3U parser for simple browser-loadable playlists
 - Demo channel data for layout testing
+- Python backend for M3U/Xtream loading and same-origin stream proxying
+- HLS.js support plus backend playlist rewriting for `.m3u8` segment URLs
 
 ## Run Locally
 
