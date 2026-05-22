@@ -352,6 +352,12 @@ function renderLibraryCard(item) {
 
 function showItemDetails(item) {
   state.selectedLibraryItem = item;
+  renderItemDetails(item);
+  els.itemModal.classList.remove("is-hidden");
+  loadItemDetails(item);
+}
+
+function renderItemPoster(item) {
   els.modalPoster.innerHTML = "";
   if (item.poster) {
     const img = document.createElement("img");
@@ -364,13 +370,41 @@ function showItemDetails(item) {
     placeholder.textContent = item.title.slice(0, 1).toUpperCase();
     els.modalPoster.appendChild(placeholder);
   }
+}
+
+function renderItemDetails(item) {
+  renderItemPoster(item);
   els.modalCategory.textContent = item.category || "Library";
   els.modalTitle.textContent = item.title;
-  els.modalMeta.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ");
-  els.modalPlot.textContent = item.plot || "No description available.";
+  els.modalMeta.textContent = [item.year, item.rating, item.genre || item.category, item.duration].filter(Boolean).join(" · ");
+  els.modalPlot.textContent = item.plot || "Loading description...";
   els.playItemButton.disabled = item.type !== "movies";
   els.playItemButton.textContent = item.type === "movies" ? "Play" : "Episodes Soon";
-  els.itemModal.classList.remove("is-hidden");
+}
+
+async function loadItemDetails(item) {
+  if (!state.sessionId || item.type !== "movies") {
+    els.modalPlot.textContent = item.plot || "No description available.";
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/item?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`,
+    );
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Details failed to load.");
+    const details = result.details || {};
+    Object.assign(item, Object.fromEntries(Object.entries(details).filter(([, value]) => value)));
+    if (state.selectedLibraryItem === item) {
+      renderItemDetails(item);
+      els.modalPlot.textContent = item.plot || "No description available.";
+    }
+  } catch {
+    if (state.selectedLibraryItem === item) {
+      els.modalPlot.textContent = item.plot || "No description available.";
+    }
+  }
 }
 
 function closeItemDetails() {

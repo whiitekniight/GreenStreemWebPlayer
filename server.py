@@ -606,6 +606,35 @@ def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
     }
 
 
+def load_xtream_movie_details(session: Session, item_id: str) -> dict[str, str]:
+    base_url = session.credentials.get("serverUrl", "")
+    username = session.credentials.get("username", "")
+    password = session.credentials.get("password", "")
+    if not base_url or not username or not password or not item_id:
+        return {}
+
+    query = urlencode({"username": username, "password": password, "action": "get_vod_info", "vod_id": item_id})
+    data = fetch_json(f"{base_url}/player_api.php?{query}")
+    info = data.get("info") if isinstance(data, dict) else {}
+    movie_data = data.get("movie_data") if isinstance(data, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    if not isinstance(movie_data, dict):
+        movie_data = {}
+
+    return {
+        "plot": str(info.get("plot") or info.get("description") or ""),
+        "rating": str(info.get("rating") or ""),
+        "year": str(info.get("releasedate") or info.get("releaseDate") or info.get("year") or ""),
+        "genre": str(info.get("genre") or ""),
+        "director": str(info.get("director") or ""),
+        "cast": str(info.get("cast") or ""),
+        "duration": str(info.get("duration") or ""),
+        "poster": str(info.get("movie_image") or info.get("cover_big") or movie_data.get("stream_icon") or ""),
+        "container": str(movie_data.get("container_extension") or ""),
+    }
+
+
 class GreenStreemHandler(BaseHTTPRequestHandler):
     server_version = "GreenStreemWebPlayer/0.1"
 
@@ -654,6 +683,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/library":
             self.handle_library(parsed.query)
+            return
+        if parsed.path == "/api/item":
+            self.handle_item(parsed.query)
             return
         if parsed.path == "/api/vod":
             self.handle_vod(parsed.query)
@@ -860,6 +892,27 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
         try:
             self.write_json(load_xtream_library(session, media_type))
+        except Exception as exc:
+            self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+
+    def handle_item(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        media_type = params.get("type", [""])[0]
+        item_id = params.get("id", [""])[0]
+        session = get_session(session_id)
+        if not session:
+            self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
+            return
+        if session.mode != "xtream":
+            self.write_json({"error": "Detailed metadata requires Xtream login."}, HTTPStatus.BAD_REQUEST)
+            return
+        if media_type != "movies":
+            self.write_json({"details": {}})
+            return
+
+        try:
+            self.write_json({"details": load_xtream_movie_details(session, item_id)})
         except Exception as exc:
             self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
