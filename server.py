@@ -89,7 +89,15 @@ def fetch_text(url: str, *, limit: int = MAX_PLAYLIST_BYTES) -> str:
 
 def fetch_json(url: str) -> Any:
     text = fetch_text(url)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        preview = re.sub(r"\s+", " ", text[:120]).strip()
+        if not preview:
+            raise ValueError("Provider returned an empty response. Check the server URL, scheme, and port.") from exc
+        if preview.startswith("<"):
+            raise ValueError("Provider returned an HTML page instead of Xtream JSON. Check the server URL, scheme, and port.") from exc
+        raise ValueError(f"Provider returned non-JSON data: {preview}") from exc
 
 
 def open_provider_url(url: str, headers: dict[str, str], session: Session | None = None):
@@ -322,7 +330,7 @@ def format_unix_expiry(raw: Any) -> str:
 def load_xtream_account(base_url: str, username: str, password: str) -> dict[str, str]:
     try:
         data = fetch_json(account_api_url(base_url, username, password))
-    except Exception:
+    except (HTTPError, URLError):
         return {}
 
     user_info = data.get("user_info") if isinstance(data, dict) else {}
