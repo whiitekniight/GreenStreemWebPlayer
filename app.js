@@ -275,6 +275,9 @@ function loadStream(playUrl, streamType) {
     state.hls.on(Hls.Events.ERROR, (_event, data) => {
       els.nowTime.textContent = `Stream issue: ${data.details || data.type}`;
       showLatestDiagnostics(data.details || data.type);
+      if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && tryFallbackStream(data.details)) {
+        return;
+      }
       if (data.fatal) {
         if (tryFallbackStream(data.details || data.type)) return;
         els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
