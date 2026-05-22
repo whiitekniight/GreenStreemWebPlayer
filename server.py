@@ -314,6 +314,11 @@ def account_api_url(base_url: str, username: str, password: str) -> str:
     return f"{base_url}/player_api.php?{query}"
 
 
+def m3u_api_url(base_url: str, username: str, password: str) -> str:
+    query = urlencode({"username": username, "password": password, "type": "m3u_plus", "output": "ts"})
+    return f"{base_url}/get.php?{query}"
+
+
 def alternate_scheme_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -365,6 +370,25 @@ def resolve_xtream_base_url(base_url: str, username: str, password: str) -> tupl
             errors.append(f"{urlparse(candidate).scheme}: {exc}")
 
     raise ValueError("; ".join(errors) or "Could not connect to Xtream API.")
+
+
+def resolve_m3u_base_url(base_url: str, username: str, password: str, session_id: str) -> tuple[str, list[dict[str, Any]]]:
+    candidates = [base_url]
+    alternate = alternate_scheme_url(base_url)
+    if alternate and alternate not in candidates:
+        candidates.append(alternate)
+
+    errors: list[str] = []
+    for candidate in candidates:
+        try:
+            channels = parse_m3u(fetch_text(m3u_api_url(candidate, username, password)), session_id)
+            if channels:
+                return candidate, channels
+            errors.append(f"{urlparse(candidate).scheme}: M3U playlist was empty")
+        except (HTTPError, URLError, ValueError) as exc:
+            errors.append(f"{urlparse(candidate).scheme}: {exc}")
+
+    raise ValueError("; ".join(errors) or "Could not load M3U playlist.")
 
 
 def load_xtream_account(base_url: str, username: str, password: str) -> dict[str, str]:
@@ -666,16 +690,29 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 password = str(payload.get("password") or "")
                 if not base_url or not username or not password:
                     raise ValueError("Enter server URL, username, and password.")
-                base_url, account = resolve_xtream_base_url(base_url, username, password)
-                session = Session(
-                    mode="xtream",
-                    created_at=time.time(),
-                    credentials={"serverUrl": base_url, "username": username, "password": password},
-                )
-                SESSIONS[session_id] = session
-                session.account = account
-                session.channels = load_xtream_channels(base_url, username, password, session_id)
-                start_epg_load(session_id, xmltv_url(base_url, username, password))
+                try:
+                    base_url, account = resolve_xtream_base_url(base_url, username, password)
+                    session = Session(
+                        mode="xtream",
+                        created_at=time.time(),
+                        credentials={"serverUrl": base_url, "username": username, "password": password},
+                    )
+                    SESSIONS[session_id] = session
+                    session.account = account
+                    session.channels = load_xtream_channels(base_url, username, password, session_id)
+                    start_epg_load(session_id, xmltv_url(base_url, username, password))
+                except ValueError as xtream_error:
+                    base_url, channels = resolve_m3u_base_url(base_url, username, password, session_id)
+                    session = Session(
+                        mode="m3u",
+                        created_at=time.time(),
+                        credentials={"serverUrl": base_url, "username": username, "password": password},
+                        account={"status": "M3U playlist", "expires": "Unknown", "activeConnections": "0", "maxConnections": "Unknown"},
+                    )
+                    SESSIONS[session_id] = session
+                    session.channels = channels
+                    start_epg_load(session_id, xmltv_url(base_url, username, password))
+                    record_diagnostic(session_id, "xtream-fallback", details=str(xtream_error))
             else:
                 raise ValueError("Choose Xtream or M3U login.")
 
