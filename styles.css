@@ -591,15 +591,6 @@ video {
   background: rgba(8, 12, 14, 0.58);
 }
 
-.category-manager-row.is-dragging {
-  opacity: 0.48;
-}
-
-.category-manager-row.is-drop-target {
-  border-color: var(--green);
-  background: rgba(57, 217, 138, 0.12);
-}
-
 .category-manager-row.is-hidden-group strong {
   color: var(--muted);
   text-decoration: line-through;
@@ -607,7 +598,6 @@ video {
 
 .drag-handle {
   color: var(--muted);
-  cursor: grab;
   font-weight: 900;
   text-align: center;
 }

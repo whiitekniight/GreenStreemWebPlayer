@@ -597,20 +597,6 @@ function closeCategoryManager() {
   els.categoryManager.classList.add("is-hidden");
 }
 
-function moveCategoryTo(category, targetCategory) {
-  const list = orderedManageableCategories();
-  const index = list.indexOf(category);
-  const targetIndex = list.indexOf(targetCategory);
-  if (index < 0 || targetIndex < 0 || index === targetIndex) return;
-  list.splice(index, 1);
-  list.splice(targetIndex, 0, category);
-  normalizeCategoryOrder(list);
-  saveCategoryPrefs();
-  renderCategoryManager();
-  renderCategories();
-  renderChannels();
-}
-
 function toggleCategoryHidden(category) {
   state.categoryPrefs[category] = {
     ...categoryPreference(category),
@@ -643,12 +629,11 @@ function renderCategoryManager() {
     const row = document.createElement("div");
     row.className = "category-manager-row";
     row.classList.toggle("is-hidden-group", categoryPreference(category).hidden);
-    row.draggable = true;
     row.dataset.category = category;
 
     const handle = document.createElement("span");
     handle.className = "drag-handle";
-    handle.textContent = "☰";
+    handle.textContent = "☷";
 
     const title = document.createElement("strong");
     title.textContent = category;
@@ -661,23 +646,6 @@ function renderCategoryManager() {
     hideButton.type = "button";
     hideButton.textContent = categoryPreference(category).hidden ? "Show" : "Hide";
     hideButton.addEventListener("click", () => toggleCategoryHidden(category));
-
-    row.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/plain", category);
-      event.dataTransfer.effectAllowed = "move";
-      row.classList.add("is-dragging");
-    });
-    row.addEventListener("dragend", () => row.classList.remove("is-dragging"));
-    row.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      row.classList.add("is-drop-target");
-    });
-    row.addEventListener("dragleave", () => row.classList.remove("is-drop-target"));
-    row.addEventListener("drop", (event) => {
-      event.preventDefault();
-      row.classList.remove("is-drop-target");
-      moveCategoryTo(event.dataTransfer.getData("text/plain"), category);
-    });
 
     controls.append(hideButton);
     row.append(handle, title, controls);
