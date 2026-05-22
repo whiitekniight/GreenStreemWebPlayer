@@ -53,7 +53,6 @@ const state = {
   activeChannelIndex: -1,
   favoritesOnly: false,
   favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
-  categoryPrefs: JSON.parse(localStorage.getItem("greenstreem:categoryPrefs") || "{}"),
   hls: null,
   mpegts: null,
   playbackVideo: null,
@@ -109,11 +108,7 @@ const els = {
   fullscreenButton: document.querySelector("#fullscreenButton"),
   searchButton: document.querySelector("#searchButton"),
   favoritesOnlyButton: document.querySelector("#favoritesOnlyButton"),
-  manageCategoriesButton: document.querySelector("#manageCategoriesButton"),
-  categoryManager: document.querySelector("#categoryManager"),
-  categoryManagerList: document.querySelector("#categoryManagerList"),
   closeCategoryManagerButton: document.querySelector("#closeCategoryManagerButton"),
-  resetCategoryManagerButton: document.querySelector("#resetCategoryManagerButton"),
   resetPlaybackButton: document.querySelector("#resetPlaybackButton"),
   loginStatus: document.querySelector("#loginStatus"),
   accountLoginType: document.querySelector("#accountLoginType"),
@@ -498,43 +493,22 @@ function setLoginMode(mode) {
   els.m3uFields.classList.toggle("is-hidden", mode !== "m3u");
 }
 
-function categoryPreference(category) {
-  return state.categoryPrefs[category] || {};
-}
-
-function saveCategoryPrefs() {
-  localStorage.setItem("greenstreem:categoryPrefs", JSON.stringify(state.categoryPrefs));
-}
-
-function baseCategories() {
+function categories() {
   const names = new Set(["All Channels", "Only Favorites"]);
   state.channels.forEach((channel) => names.add(channel.category || "Uncategorized"));
-  return [...names];
-}
-
-function categories({ includeHidden = false } = {}) {
-  return baseCategories()
-    .filter((category) => includeHidden || !categoryPreference(category).hidden)
-    .sort((a, b) => {
-      const orderA = categoryPreference(a).order;
-      const orderB = categoryPreference(b).order;
-      if (Number.isFinite(orderA) || Number.isFinite(orderB)) {
-        return (Number.isFinite(orderA) ? orderA : 10000) - (Number.isFinite(orderB) ? orderB : 10000);
-      }
+  return [...names].sort((a, b) => {
       if (a === "All Channels") return -1;
       if (b === "All Channels") return 1;
       if (a === "Only Favorites") return -1;
       if (b === "Only Favorites") return 1;
       return a.localeCompare(b);
-    });
+  });
 }
 
 function visibleChannels() {
   const search = els.channelSearchInput.value.trim().toLowerCase();
-  const hiddenCategories = new Set(categories({ includeHidden: true }).filter((category) => categoryPreference(category).hidden));
   return state.channels.filter((channel, index) => {
     const favorite = state.favorites.has(channel.name);
-    if (hiddenCategories.has(channel.category || "Uncategorized") && !favorite) return false;
     const categoryMatch =
       state.activeCategory === "All Channels" ||
       state.activeCategory === channel.category ||
@@ -548,12 +522,6 @@ function visibleChannels() {
 function renderCategories() {
   const search = els.categorySearchInput.value.trim().toLowerCase();
   els.categoryList.innerHTML = "";
-
-  if (categoryPreference(state.activeCategory).hidden) {
-    state.activeCategory = "All Channels";
-    state.favoritesOnly = false;
-    els.currentCategoryLabel.textContent = state.activeCategory;
-  }
 
   categories()
     .filter((category) => !search || category.toLowerCase().includes(search))
@@ -574,83 +542,6 @@ function renderCategories() {
       });
       els.categoryList.appendChild(button);
     });
-}
-
-function orderedManageableCategories() {
-  return categories({ includeHidden: true }).filter((category) => !["All Channels", "Only Favorites"].includes(category));
-}
-
-function normalizeCategoryOrder(list = orderedManageableCategories()) {
-  list.forEach((category, index) => {
-    state.categoryPrefs[category] = { ...categoryPreference(category), order: index };
-  });
-}
-
-function openCategoryManager() {
-  normalizeCategoryOrder();
-  saveCategoryPrefs();
-  renderCategoryManager();
-  els.categoryManager.classList.remove("is-hidden");
-}
-
-function closeCategoryManager() {
-  els.categoryManager.classList.add("is-hidden");
-}
-
-function toggleCategoryHidden(category) {
-  state.categoryPrefs[category] = {
-    ...categoryPreference(category),
-    hidden: !categoryPreference(category).hidden,
-  };
-  saveCategoryPrefs();
-  renderCategoryManager();
-  renderCategories();
-  renderChannels();
-}
-
-function resetCategoryManager() {
-  state.categoryPrefs = {};
-  saveCategoryPrefs();
-  renderCategoryManager();
-  renderCategories();
-  renderChannels();
-}
-
-function renderCategoryManager() {
-  const list = orderedManageableCategories();
-  els.categoryManagerList.innerHTML = "";
-
-  if (!list.length) {
-    els.categoryManagerList.appendChild(emptyLibraryMessage("No groups loaded yet."));
-    return;
-  }
-
-  list.forEach((category, index) => {
-    const row = document.createElement("div");
-    row.className = "category-manager-row";
-    row.classList.toggle("is-hidden-group", categoryPreference(category).hidden);
-    row.dataset.category = category;
-
-    const handle = document.createElement("span");
-    handle.className = "drag-handle";
-    handle.textContent = "☷";
-
-    const title = document.createElement("strong");
-    title.textContent = category;
-
-    const controls = document.createElement("span");
-    controls.className = "category-manager-controls";
-
-    const hideButton = document.createElement("button");
-    hideButton.className = "secondary-button";
-    hideButton.type = "button";
-    hideButton.textContent = categoryPreference(category).hidden ? "Show" : "Hide";
-    hideButton.addEventListener("click", () => toggleCategoryHidden(category));
-
-    controls.append(hideButton);
-    row.append(handle, title, controls);
-    els.categoryManagerList.appendChild(row);
-  });
 }
 
 function renderChannels() {
@@ -1088,9 +979,6 @@ document.addEventListener("click", (event) => {
 els.openCategoriesButton.addEventListener("click", openDrawer);
 els.closeCategoriesButton.addEventListener("click", closeDrawer);
 els.drawerScrim.addEventListener("click", closeDrawer);
-els.manageCategoriesButton.addEventListener("click", openCategoryManager);
-els.closeCategoryManagerButton.addEventListener("click", closeCategoryManager);
-els.resetCategoryManagerButton.addEventListener("click", resetCategoryManager);
 els.categorySearchInput.addEventListener("input", renderCategories);
 els.channelSearchInput.addEventListener("input", renderChannels);
 els.librarySearchInput.addEventListener("input", renderLibrary);

@@ -98,7 +98,6 @@
               <input id="channelSearchInput" placeholder="Search channels...">
               <button class="secondary-button" type="button" data-section="home">Back</button>
               <button id="favoritesOnlyButton" class="chip-button" type="button">Favorites</button>
-              <button id="manageCategoriesButton" class="secondary-button" type="button">Manage Groups</button>
               <button id="resetPlaybackButton" class="icon-button" type="button" title="Reset playback learning">↺</button>
             </div>
             <div id="channelList" class="channel-list" aria-label="Channels"></div>
@@ -212,19 +211,6 @@
         <div id="categoryList" class="category-list"></div>
       </aside>
       <div id="drawerScrim" class="drawer-scrim"></div>
-      <div id="categoryManager" class="item-modal is-hidden" role="dialog" aria-modal="true" aria-label="Manage groups">
-        <div class="item-modal-panel category-manager-panel">
-          <button id="closeCategoryManagerButton" class="icon-button" type="button" title="Close">×</button>
-          <div class="account-header">
-            <div>
-              <p class="eyebrow">Live Groups</p>
-              <h2>Manage Groups</h2>
-            </div>
-            <button id="resetCategoryManagerButton" class="secondary-button" type="button">Reset</button>
-          </div>
-          <div id="categoryManagerList" class="category-manager-list"></div>
-        </div>
-      </div>
       <div id="itemModal" class="item-modal is-hidden" role="dialog" aria-modal="true" aria-label="Item details">
         <div class="item-modal-panel">
           <button id="closeItemModalButton" class="icon-button" type="button" title="Close">×</button>
@@ -258,6 +244,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260522-1150"></script>
+    <script src="app.js?v=20260522-1213"></script>
   </body>
 </html>
