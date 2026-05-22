@@ -56,6 +56,8 @@ const state = {
   mpegts: null,
   activeChannel: null,
   triedFallback: false,
+  preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
+  pendingTsPreference: false,
 };
 
 const els = {
@@ -84,6 +86,7 @@ const els = {
   fullscreenButton: document.querySelector("#fullscreenButton"),
   searchButton: document.querySelector("#searchButton"),
   favoritesOnlyButton: document.querySelector("#favoritesOnlyButton"),
+  resetPlaybackButton: document.querySelector("#resetPlaybackButton"),
   loginStatus: document.querySelector("#loginStatus"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
@@ -239,9 +242,21 @@ function playChannel(index) {
   els.nowTime.textContent = hasStream ? "Loading stream..." : "Demo channel has no live stream URL yet.";
   state.activeChannel = channel;
   state.triedFallback = false;
+  state.pendingTsPreference = false;
 
   if (hasStream) {
-    loadStream(streamUrl, channel.streamType || channel.url || "");
+    const shouldPreferTs =
+      state.preferredLiveStreamType === "mpegts" &&
+      channel.fallbackPlayUrl &&
+      channel.fallbackStreamType === "mpegts";
+
+    if (shouldPreferTs) {
+      els.nowTime.textContent = "Using learned TS playback path...";
+      state.triedFallback = true;
+      loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType);
+    } else {
+      loadStream(streamUrl, channel.streamType || channel.url || "");
+    }
   } else {
     clearPlayer();
   }
@@ -311,6 +326,7 @@ function loadStream(playUrl, streamType) {
   }
 
   if (streamType === "mpegts" && window.mpegts && window.mpegts.getFeatureList().mseLivePlayback) {
+    const fallbackTrial = state.pendingTsPreference;
     state.mpegts = mpegts.createPlayer({
       type: "mpegts",
       isLive: true,
@@ -322,7 +338,7 @@ function loadStream(playUrl, streamType) {
     });
     state.mpegts.attachMediaElement(els.videoPlayer);
     state.mpegts.load();
-    els.nowTime.textContent = "Trying direct TS stream fallback...";
+    els.nowTime.textContent = fallbackTrial ? "Trying direct TS stream fallback..." : "Opening TS stream...";
     attemptPlay();
     return;
   }
@@ -339,6 +355,7 @@ function tryFallbackStream(reason) {
   if (!channel || state.triedFallback || !channel.fallbackPlayUrl) return false;
 
   state.triedFallback = true;
+  state.pendingTsPreference = true;
   els.nowTime.textContent = `${reason}. Trying TS fallback...`;
   if (state.hls) {
     state.hls.destroy();
@@ -355,6 +372,11 @@ function attemptPlay() {
 }
 
 els.videoPlayer.addEventListener("playing", () => {
+  if (state.pendingTsPreference && state.activeChannel?.fallbackStreamType === "mpegts") {
+    state.preferredLiveStreamType = "mpegts";
+    localStorage.setItem("greenstreem:preferredLiveStreamType", "mpegts");
+    state.pendingTsPreference = false;
+  }
   els.nowTime.textContent = "Playing.";
 });
 
@@ -490,6 +512,7 @@ els.loginForm.addEventListener("submit", async (event) => {
     state.channels = result.channels.length ? result.channels : [...demoChannels];
     state.activeCategory = "All Channels";
     state.activeChannelIndex = -1;
+    state.preferredLiveStreamType = localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto";
     setStatus(`Loaded ${state.channels.length} channels.`);
     showSection("home");
   } catch (error) {
@@ -521,6 +544,13 @@ els.favoritesOnlyButton.addEventListener("click", () => {
   state.favoritesOnly = !state.favoritesOnly;
   els.favoritesOnlyButton.classList.toggle("is-active", state.favoritesOnly);
   renderChannels();
+});
+
+els.resetPlaybackButton.addEventListener("click", () => {
+  state.preferredLiveStreamType = "auto";
+  state.pendingTsPreference = false;
+  localStorage.removeItem("greenstreem:preferredLiveStreamType");
+  els.nowTime.textContent = "Playback learning reset. Next channel will try HLS first.";
 });
 
 els.fullscreenButton.addEventListener("click", () => {
