@@ -622,16 +622,35 @@ def load_xtream_movie_details(session: Session, item_id: str) -> dict[str, str]:
     if not isinstance(movie_data, dict):
         movie_data = {}
 
+    def first_text(*values: Any) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text and text.lower() not in {"n/a", "null", "none"}:
+                return text
+        return ""
+
+    plot = first_text(
+        info.get("plot"),
+        info.get("description"),
+        info.get("overview"),
+        info.get("movie_description"),
+        info.get("backdrop_path"),
+        movie_data.get("plot"),
+        movie_data.get("description"),
+        movie_data.get("overview"),
+    )
+
     return {
-        "plot": str(info.get("plot") or info.get("description") or ""),
-        "rating": str(info.get("rating") or ""),
-        "year": str(info.get("releasedate") or info.get("releaseDate") or info.get("year") or ""),
-        "genre": str(info.get("genre") or ""),
-        "director": str(info.get("director") or ""),
-        "cast": str(info.get("cast") or ""),
-        "duration": str(info.get("duration") or ""),
-        "poster": str(info.get("movie_image") or info.get("cover_big") or movie_data.get("stream_icon") or ""),
-        "container": str(movie_data.get("container_extension") or ""),
+        "plot": plot,
+        "rating": first_text(info.get("rating"), movie_data.get("rating")),
+        "year": first_text(info.get("releasedate"), info.get("releaseDate"), info.get("year"), movie_data.get("year")),
+        "genre": first_text(info.get("genre"), movie_data.get("genre")),
+        "director": first_text(info.get("director"), movie_data.get("director")),
+        "cast": first_text(info.get("cast"), movie_data.get("cast")),
+        "duration": first_text(info.get("duration"), info.get("duration_secs"), movie_data.get("duration")),
+        "poster": first_text(info.get("movie_image"), info.get("cover_big"), info.get("cover"), movie_data.get("stream_icon")),
+        "container": first_text(movie_data.get("container_extension")),
+        "debugFields": ",".join(sorted(set(info.keys()) | {f"movie_data.{key}" for key in movie_data.keys()})),
     }
 
 

@@ -398,7 +398,7 @@ async function loadItemDetails(item) {
     Object.assign(item, Object.fromEntries(Object.entries(details).filter(([, value]) => value)));
     if (state.selectedLibraryItem === item) {
       renderItemDetails(item);
-      els.modalPlot.textContent = item.plot || "No description available.";
+      els.modalPlot.textContent = item.plot || (item.debugFields ? `No description available. Fields: ${item.debugFields}` : "No description available.");
     }
   } catch {
     if (state.selectedLibraryItem === item) {
