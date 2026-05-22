@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="greenstreem.demo.1">
+    <display-name>GreenStreem Demo Clip</display-name>
+  </channel>
+  <programme start="20300101000000 +0000" stop="20300101003000 +0000" channel="greenstreem.demo.1">
+    <title>GreenStreem Test Program</title>
+    <desc>Sample guide entry for parser testing.</desc>
+  </programme>
+  <programme start="20300101003000 +0000" stop="20300101010000 +0000" channel="greenstreem.demo.1">
+    <title>Next GreenStreem Test Program</title>
+    <desc>Second sample guide entry for parser testing.</desc>
+  </programme>
+</tv>

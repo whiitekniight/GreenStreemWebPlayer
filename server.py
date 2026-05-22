@@ -15,7 +15,10 @@ import re
 import secrets
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +30,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 ROOT = Path(__file__).resolve().parent
 MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
+MAX_EPG_BYTES = 120 * 1024 * 1024
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -128,12 +132,15 @@ def parse_m3u(text: str, session_id: str) -> list[dict[str, Any]]:
         channels.append(
             {
                 "name": name,
+                "tvgId": attr(line, "tvg-id"),
+                "tvgName": attr(line, "tvg-name"),
                 "category": attr(line, "group-title") or "Uncategorized",
                 "logo": attr(line, "tvg-logo"),
                 "url": stream_url,
                 "playUrl": f"/api/stream?session={quote(session_id)}&channel={channel_index}",
                 "streamType": guess_stream_type(stream_url),
                 "now": "EPG not connected yet",
+                "next": "",
             }
         )
 
@@ -163,9 +170,119 @@ def public_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "fallbackStreamType": channel.get("fallbackStreamType") or "",
                 "hasStream": bool(channel.get("url")),
                 "now": channel.get("now") or "EPG not connected yet",
+                "next": channel.get("next") or "",
             }
         )
     return safe_channels
+
+
+def parse_xmltv_time(raw: str) -> datetime | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+
+    match = re.match(r"^(\d{14})(?:\s*([+-]\d{4}))?", raw)
+    if not match:
+        return None
+
+    stamp, offset = match.groups()
+    parsed = datetime.strptime(stamp, "%Y%m%d%H%M%S")
+    if offset:
+        sign = 1 if offset[0] == "+" else -1
+        hours = int(offset[1:3])
+        minutes = int(offset[3:5])
+        tz = timezone(sign * timedelta(hours=hours, minutes=minutes))
+        return parsed.replace(tzinfo=tz).astimezone(timezone.utc)
+    return parsed.replace(tzinfo=timezone.utc)
+
+
+def normalize_epg_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def text_from_child(element: ET.Element, name: str) -> str:
+    child = element.find(name)
+    return (child.text or "").strip() if child is not None and child.text else ""
+
+
+def program_label(program: dict[str, Any]) -> str:
+    title = str(program.get("title") or "No Information")
+    start = program.get("start")
+    stop = program.get("stop")
+    if isinstance(start, datetime) and isinstance(stop, datetime):
+        return f"{start.astimezone().strftime('%I:%M %p').lstrip('0')} - {stop.astimezone().strftime('%I:%M %p').lstrip('0')}  {title}"
+    return title
+
+
+def apply_epg(channels: list[dict[str, Any]], xmltv_text: str) -> int:
+    if not xmltv_text.strip():
+        return 0
+
+    now = datetime.now(timezone.utc)
+    wanted: dict[str, list[dict[str, Any]]] = {}
+    for channel in channels:
+        keys = {
+            normalize_epg_key(str(channel.get("tvgId") or "")),
+            normalize_epg_key(str(channel.get("tvgName") or "")),
+            normalize_epg_key(str(channel.get("epgChannelId") or "")),
+            normalize_epg_key(str(channel.get("name") or "")),
+        }
+        for key in keys:
+            if key:
+                wanted.setdefault(key, []).append(channel)
+
+    if not wanted:
+        return 0
+
+    matched = 0
+    programmes_by_channel: dict[str, list[dict[str, Any]]] = {}
+    for _event, element in ET.iterparse(StringIO(xmltv_text), events=("end",)):
+        if element.tag != "programme":
+            continue
+
+        channel_key = normalize_epg_key(element.attrib.get("channel", ""))
+        if channel_key not in wanted:
+            element.clear()
+            continue
+
+        start = parse_xmltv_time(element.attrib.get("start", ""))
+        stop = parse_xmltv_time(element.attrib.get("stop", ""))
+        if not start or not stop or stop <= now:
+            element.clear()
+            continue
+
+        programmes_by_channel.setdefault(channel_key, []).append(
+            {
+                "start": start,
+                "stop": stop,
+                "title": text_from_child(element, "title"),
+                "desc": text_from_child(element, "desc"),
+            }
+        )
+        element.clear()
+
+    for key, programmes in programmes_by_channel.items():
+        programmes.sort(key=lambda item: item["start"])
+        current = next((item for item in programmes if item["start"] <= now < item["stop"]), None)
+        upcoming = next((item for item in programmes if item["start"] > now), None)
+        if not current and programmes:
+            current = programmes[0]
+            upcoming = programmes[1] if len(programmes) > 1 else None
+
+        if not current:
+            continue
+
+        for channel in wanted.get(key, []):
+            channel["now"] = program_label(current)
+            channel["next"] = f"Next: {program_label(upcoming)}" if upcoming else ""
+            matched += 1
+
+    return matched
+
+
+def xmltv_url(base_url: str, username: str, password: str) -> str:
+    query = urlencode({"username": username, "password": password})
+    return f"{base_url}/xmltv.php?{query}"
 
 
 def safe_url_info(url: str) -> dict[str, str]:
@@ -234,6 +351,7 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
         channels.append(
             {
                 "name": str(item.get("name") or f"Channel {stream_id}"),
+                "epgChannelId": str(item.get("epg_channel_id") or ""),
                 "category": categories_by_id.get(category_id, "Uncategorized"),
                 "logo": str(item.get("stream_icon") or ""),
                 "url": hls_url,
@@ -287,11 +405,18 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
 
             if mode == "m3u":
                 m3u_url = normalize_url(str(payload.get("m3uUrl") or ""))
+                epg_url = normalize_url(str(payload.get("epgUrl") or ""))
                 if not m3u_url:
                     raise ValueError("Enter an M3U playlist URL.")
                 session = Session(mode="m3u", created_at=time.time(), credentials={"m3uUrl": m3u_url})
                 SESSIONS[session_id] = session
                 session.channels = parse_m3u(fetch_text(m3u_url), session_id)
+                if epg_url:
+                    try:
+                        matched = apply_epg(session.channels, fetch_text(epg_url, limit=MAX_EPG_BYTES))
+                        record_diagnostic(session_id, "epg-loaded", details=f"matched {matched} channels")
+                    except Exception as exc:
+                        record_diagnostic(session_id, "epg-error", details=str(exc))
             elif mode == "xtream":
                 base_url = normalize_url(str(payload.get("serverUrl") or ""))
                 username = str(payload.get("username") or "").strip()
@@ -305,6 +430,14 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 )
                 SESSIONS[session_id] = session
                 session.channels = load_xtream_channels(base_url, username, password, session_id)
+                try:
+                    matched = apply_epg(
+                        session.channels,
+                        fetch_text(xmltv_url(base_url, username, password), limit=MAX_EPG_BYTES),
+                    )
+                    record_diagnostic(session_id, "epg-loaded", details=f"matched {matched} channels")
+                except Exception as exc:
+                    record_diagnostic(session_id, "epg-error", details=str(exc))
             else:
                 raise ValueError("Choose Xtream or M3U login.")
 

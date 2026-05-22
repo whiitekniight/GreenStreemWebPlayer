@@ -77,6 +77,7 @@ const els = {
   currentCategoryLabel: document.querySelector("#currentCategoryLabel"),
   currentChannelTitle: document.querySelector("#currentChannelTitle"),
   nowTitle: document.querySelector("#nowTitle"),
+  nextTitle: document.querySelector("#nextTitle"),
   nowTime: document.querySelector("#nowTime"),
   videoPlayer: document.querySelector("#videoPlayer"),
   categoryDrawer: document.querySelector("#categoryDrawer"),
@@ -237,6 +238,7 @@ function playChannel(index) {
   els.currentChannelTitle.textContent = channel.name;
   els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
   els.nowTitle.textContent = channel.now || "EPG not connected yet";
+  els.nextTitle.textContent = channel.next || "No upcoming program loaded.";
   const streamUrl = channel.playUrl || channel.url;
   const hasStream = channel.hasStream || Boolean(streamUrl);
   els.nowTime.textContent = hasStream ? "Loading stream..." : "Demo channel has no live stream URL yet.";
