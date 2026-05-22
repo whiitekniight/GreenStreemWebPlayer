@@ -927,8 +927,11 @@ els.loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-document.querySelectorAll("[data-section]").forEach((button) => {
-  button.addEventListener("click", () => showSection(button.dataset.section));
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-section]");
+  if (!button) return;
+  event.preventDefault();
+  showSection(button.dataset.section);
 });
 
 els.openCategoriesButton.addEventListener("click", openDrawer);
