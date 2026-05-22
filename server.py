@@ -161,8 +161,7 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
         if not stream_id:
             continue
 
-        ext = str(item.get("container_extension") or "m3u8").lstrip(".")
-        stream_url = f"{base_url}/live/{quote(username)}/{quote(password)}/{quote(stream_id)}.{ext}"
+        stream_url = f"{base_url}/live/{quote(username)}/{quote(password)}/{quote(stream_id)}.m3u8"
         channel_index = len(channels)
         category_id = str(item.get("category_id") or "")
         channels.append(
@@ -262,7 +261,12 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def proxy_url(self, url: str) -> None:
-        request = Request(url, headers={"User-Agent": USER_AGENT})
+        headers = {"User-Agent": USER_AGENT}
+        range_header = self.headers.get("Range")
+        if range_header:
+            headers["Range"] = range_header
+
+        request = Request(url, headers=headers)
         with urlopen(request, timeout=20) as response:
             content_type = response.headers.get("Content-Type", "application/octet-stream")
             if self.is_hls_playlist(url, content_type):
@@ -281,9 +285,13 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
 
-            self.send_response(HTTPStatus.OK)
+            self.send_response(getattr(response, "status", HTTPStatus.OK))
             self.send_header("Content-Type", content_type)
             self.send_header("Access-Control-Allow-Origin", "*")
+            for header in ("Content-Length", "Content-Range", "Accept-Ranges"):
+                value = response.headers.get(header)
+                if value:
+                    self.send_header(header, value)
             self.end_headers()
             while True:
                 chunk = response.read(64 * 1024)

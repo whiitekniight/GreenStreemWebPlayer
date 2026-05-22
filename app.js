@@ -260,12 +260,25 @@ function loadStream(playUrl, streamType) {
 
   if (looksLikeHls && window.Hls && window.Hls.isSupported()) {
     state.hls = new Hls({ lowLatencyMode: true });
+    state.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+      els.nowTime.textContent = "Opening HLS stream...";
+    });
     state.hls.on(Hls.Events.ERROR, (_event, data) => {
+      els.nowTime.textContent = `Stream issue: ${data.details || data.type}`;
       if (data.fatal) {
         els.nowTime.textContent = `Playback failed: ${data.details || data.type}`;
         state.hls.destroy();
         state.hls = null;
       }
+    });
+    state.hls.on(Hls.Events.LEVEL_LOADED, () => {
+      els.nowTime.textContent = "HLS playlist loaded. Fetching video segments...";
+    });
+    state.hls.on(Hls.Events.FRAG_LOADED, () => {
+      els.nowTime.textContent = "Video segment loaded. Buffering...";
+    });
+    state.hls.on(Hls.Events.BUFFER_APPENDED, () => {
+      els.nowTime.textContent = "Video buffered. Starting playback...";
     });
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
       els.nowTime.textContent = "HLS stream ready.";
@@ -295,6 +308,29 @@ function attemptPlay() {
     els.nowTime.textContent = "Stream loaded. Press play in the video window.";
   });
 }
+
+els.videoPlayer.addEventListener("playing", () => {
+  els.nowTime.textContent = "Playing.";
+});
+
+els.videoPlayer.addEventListener("waiting", () => {
+  els.nowTime.textContent = "Buffering video...";
+});
+
+els.videoPlayer.addEventListener("stalled", () => {
+  els.nowTime.textContent = "Stream stalled while loading video data.";
+});
+
+els.videoPlayer.addEventListener("error", () => {
+  const error = els.videoPlayer.error;
+  const message =
+    error?.code === MediaError.MEDIA_ERR_DECODE
+      ? "Video codec is not supported by this browser."
+      : error?.code === MediaError.MEDIA_ERR_NETWORK
+        ? "Network error while loading stream."
+        : "Browser could not play this stream.";
+  els.nowTime.textContent = message;
+});
 
 function toggleFavorite(name) {
   if (state.favorites.has(name)) {
