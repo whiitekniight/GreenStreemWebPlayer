@@ -597,12 +597,13 @@ function closeCategoryManager() {
   els.categoryManager.classList.add("is-hidden");
 }
 
-function moveCategory(category, direction) {
+function moveCategoryTo(category, targetCategory) {
   const list = orderedManageableCategories();
   const index = list.indexOf(category);
-  const nextIndex = index + direction;
-  if (index < 0 || nextIndex < 0 || nextIndex >= list.length) return;
-  [list[index], list[nextIndex]] = [list[nextIndex], list[index]];
+  const targetIndex = list.indexOf(targetCategory);
+  if (index < 0 || targetIndex < 0 || index === targetIndex) return;
+  list.splice(index, 1);
+  list.splice(targetIndex, 0, category);
   normalizeCategoryOrder(list);
   saveCategoryPrefs();
   renderCategoryManager();
@@ -642,6 +643,12 @@ function renderCategoryManager() {
     const row = document.createElement("div");
     row.className = "category-manager-row";
     row.classList.toggle("is-hidden-group", categoryPreference(category).hidden);
+    row.draggable = true;
+    row.dataset.category = category;
+
+    const handle = document.createElement("span");
+    handle.className = "drag-handle";
+    handle.textContent = "☰";
 
     const title = document.createElement("strong");
     title.textContent = category;
@@ -655,24 +662,25 @@ function renderCategoryManager() {
     hideButton.textContent = categoryPreference(category).hidden ? "Show" : "Hide";
     hideButton.addEventListener("click", () => toggleCategoryHidden(category));
 
-    const upButton = document.createElement("button");
-    upButton.className = "icon-button";
-    upButton.type = "button";
-    upButton.title = "Move up";
-    upButton.textContent = "↑";
-    upButton.disabled = index === 0;
-    upButton.addEventListener("click", () => moveCategory(category, -1));
+    row.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", category);
+      event.dataTransfer.effectAllowed = "move";
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("is-dragging"));
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("is-drop-target");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("is-drop-target"));
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      row.classList.remove("is-drop-target");
+      moveCategoryTo(event.dataTransfer.getData("text/plain"), category);
+    });
 
-    const downButton = document.createElement("button");
-    downButton.className = "icon-button";
-    downButton.type = "button";
-    downButton.title = "Move down";
-    downButton.textContent = "↓";
-    downButton.disabled = index === list.length - 1;
-    downButton.addEventListener("click", () => moveCategory(category, 1));
-
-    controls.append(hideButton, upButton, downButton);
-    row.append(title, controls);
+    controls.append(hideButton);
+    row.append(handle, title, controls);
     els.categoryManagerList.appendChild(row);
   });
 }
