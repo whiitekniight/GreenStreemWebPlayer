@@ -12,6 +12,8 @@ services:
       GREENSTREEM_DEFAULT_SERVER_URL: ${GREENSTREEM_DEFAULT_SERVER_URL:-}
     ports:
       - "8097:8097"
+    volumes:
+      - ..:/app
 
   cloudflared:
     image: cloudflare/cloudflared:latest
