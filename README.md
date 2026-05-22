@@ -38,6 +38,7 @@ Optional environment settings:
 GREENSTREEM_HOST=127.0.0.1
 GREENSTREEM_PORT=8097
 GREENSTREEM_SESSION_TTL_SECONDS=43200
+GREENSTREEM_DEFAULT_SERVER_URL=
 ```
 
 ## NAS + Cloudflare Tunnel Deploy
@@ -63,6 +64,16 @@ The tunnel should point `player.greenstreemlabs.com` to:
 ```text
 http://greenstreem-web-player:8097
 ```
+
+For the safest user portal flow, put your provider/server URL in the NAS `.env`
+file:
+
+```text
+GREENSTREEM_DEFAULT_SERVER_URL=http://provider-server.example
+```
+
+When this is set, the public login page hides the Server URL field. Users enter
+only their playlist username and password.
 
 ## VPS Deploy
 
@@ -112,3 +123,5 @@ docker run --rm -p 8097:8097 greenstreem-web-player
   fine for the first hosted build.
 - The default session timeout is 12 hours and can be changed with
   `GREENSTREEM_SESSION_TTL_SECONDS`.
+- Keep `GREENSTREEM_DEFAULT_SERVER_URL` in the backend `.env`, not in frontend
+  JavaScript.

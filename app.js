@@ -47,6 +47,7 @@ const state = {
   mode: "xtream",
   section: "login",
   sessionId: "",
+  defaultServerConfigured: false,
   channels: [...demoChannels],
   activeCategory: "All Channels",
   activeChannelIndex: -1,
@@ -81,6 +82,8 @@ const els = {
   loginForm: document.querySelector("#loginForm"),
   modeTabs: document.querySelectorAll(".mode-tab"),
   xtreamFields: document.querySelector("#xtreamFields"),
+  serverUrlField: document.querySelector("#serverUrlField"),
+  serverUrlInput: document.querySelector("#serverUrlInput"),
   m3uFields: document.querySelector("#m3uFields"),
   demoButton: document.querySelector("#demoButton"),
   channelList: document.querySelector("#channelList"),
@@ -144,6 +147,23 @@ const apiAvailable = window.location.protocol !== "file:";
 
 function setStatus(message) {
   els.loginStatus.textContent = message;
+}
+
+async function loadPublicConfig() {
+  if (!apiAvailable) return;
+
+  try {
+    const response = await fetch("/api/config");
+    const config = await response.json();
+    state.defaultServerConfigured = Boolean(config.defaultServerConfigured);
+    els.serverUrlField.classList.toggle("is-hidden", state.defaultServerConfigured);
+    if (state.defaultServerConfigured) {
+      els.serverUrlInput.value = "";
+      setStatus("GreenStreem server is configured. Enter your playlist username and password.");
+    }
+  } catch {
+    // Keep the manual server field available if config cannot load.
+  }
 }
 
 function showSection(section) {
@@ -878,7 +898,7 @@ els.loginForm.addEventListener("submit", async (event) => {
         }
       : {
           mode: "xtream",
-          serverUrl: document.querySelector("#serverUrlInput").value.trim(),
+          serverUrl: state.defaultServerConfigured ? "" : els.serverUrlInput.value.trim(),
           username: document.querySelector("#usernameInput").value.trim(),
           password: document.querySelector("#passwordInput").value,
         };
@@ -1016,3 +1036,4 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 showSection("login");
+loadPublicConfig();

@@ -35,6 +35,7 @@ MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
 MAX_EPG_BYTES = 120 * 1024 * 1024
 DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("GREENSTREEM_PORT", "8097"))
+DEFAULT_SERVER_URL_RAW = os.environ.get("GREENSTREEM_DEFAULT_SERVER_URL", "")
 SESSION_TTL_SECONDS = int(os.environ.get("GREENSTREEM_SESSION_TTL_SECONDS", str(12 * 60 * 60)))
 SESSION_CLEANUP_INTERVAL_SECONDS = 5 * 60
 USER_AGENT = (
@@ -71,6 +72,9 @@ def normalize_url(raw: str) -> str:
     if not raw.startswith(("http://", "https://")):
         raw = "http://" + raw
     return raw.rstrip("/")
+
+
+DEFAULT_SERVER_URL = normalize_url(DEFAULT_SERVER_URL_RAW)
 
 
 def fetch_text(url: str, *, limit: int = MAX_PLAYLIST_BYTES) -> str:
@@ -572,6 +576,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/health":
             self.write_json({"ok": True})
             return
+        if parsed.path == "/api/config":
+            self.write_json({"defaultServerConfigured": bool(DEFAULT_SERVER_URL)})
+            return
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
             return
@@ -617,7 +624,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 if epg_url:
                     start_epg_load(session_id, epg_url)
             elif mode == "xtream":
-                base_url = normalize_url(str(payload.get("serverUrl") or ""))
+                base_url = DEFAULT_SERVER_URL or normalize_url(str(payload.get("serverUrl") or ""))
                 username = str(payload.get("username") or "").strip()
                 password = str(payload.get("password") or "")
                 if not base_url or not username or not password:
