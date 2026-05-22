@@ -314,6 +314,14 @@ def account_api_url(base_url: str, username: str, password: str) -> str:
     return f"{base_url}/player_api.php?{query}"
 
 
+def alternate_scheme_url(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    scheme = "http" if parsed.scheme == "https" else "https"
+    return parsed._replace(scheme=scheme).geturl().rstrip("/")
+
+
 def format_unix_expiry(raw: Any) -> str:
     value = str(raw or "").strip()
     if not value:
@@ -327,12 +335,7 @@ def format_unix_expiry(raw: Any) -> str:
         return value
 
 
-def load_xtream_account(base_url: str, username: str, password: str) -> dict[str, str]:
-    try:
-        data = fetch_json(account_api_url(base_url, username, password))
-    except (HTTPError, URLError):
-        return {}
-
+def account_from_xtream_data(data: Any) -> dict[str, str]:
     user_info = data.get("user_info") if isinstance(data, dict) else {}
     server_info = data.get("server_info") if isinstance(data, dict) else {}
     if not isinstance(user_info, dict):
@@ -345,6 +348,32 @@ def load_xtream_account(base_url: str, username: str, password: str) -> dict[str
         "maxConnections": str(user_info.get("max_connections") or "Unknown"),
         "serverTimeZone": str(server_info.get("timezone") or "") if isinstance(server_info, dict) else "",
     }
+
+
+def resolve_xtream_base_url(base_url: str, username: str, password: str) -> tuple[str, dict[str, str]]:
+    candidates = [base_url]
+    alternate = alternate_scheme_url(base_url)
+    if alternate and alternate not in candidates:
+        candidates.append(alternate)
+
+    errors: list[str] = []
+    for candidate in candidates:
+        try:
+            data = fetch_json(account_api_url(candidate, username, password))
+            return candidate, account_from_xtream_data(data)
+        except (HTTPError, URLError, ValueError) as exc:
+            errors.append(f"{urlparse(candidate).scheme}: {exc}")
+
+    raise ValueError("; ".join(errors) or "Could not connect to Xtream API.")
+
+
+def load_xtream_account(base_url: str, username: str, password: str) -> dict[str, str]:
+    try:
+        data = fetch_json(account_api_url(base_url, username, password))
+    except (HTTPError, URLError, ValueError):
+        return {}
+
+    return account_from_xtream_data(data)
 
 
 def guide_info(session: Session) -> dict[str, Any]:
@@ -637,13 +666,14 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 password = str(payload.get("password") or "")
                 if not base_url or not username or not password:
                     raise ValueError("Enter server URL, username, and password.")
+                base_url, account = resolve_xtream_base_url(base_url, username, password)
                 session = Session(
                     mode="xtream",
                     created_at=time.time(),
                     credentials={"serverUrl": base_url, "username": username, "password": password},
                 )
                 SESSIONS[session_id] = session
-                session.account = load_xtream_account(base_url, username, password)
+                session.account = account
                 session.channels = load_xtream_channels(base_url, username, password, session_id)
                 start_epg_load(session_id, xmltv_url(base_url, username, password))
             else:
