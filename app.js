@@ -720,14 +720,20 @@ function loadStream(playUrl, streamType) {
       setPlaybackStatus("Opening HLS stream...");
     });
     state.hls.on(Hls.Events.ERROR, (_event, data) => {
-      setPlaybackStatus(`Stream issue: ${data.details || data.type}`);
-      showLatestDiagnostics(data.details || data.type);
-      if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && tryFallbackStream(data.details)) {
+      const issue = data.details || data.type;
+      const shouldTryFallback =
+        data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+        data.type === Hls.ErrorTypes.MEDIA_ERROR ||
+        /mse|decode|buffer/i.test(issue || "");
+
+      setPlaybackStatus(`Stream issue: ${issue}`);
+      showLatestDiagnostics(issue);
+      if (shouldTryFallback && tryFallbackStream(issue)) {
         return;
       }
       if (data.fatal) {
-        if (tryFallbackStream(data.details || data.type)) return;
-        setPlaybackStatus(`Playback failed: ${data.details || data.type}`);
+        if (tryFallbackStream(issue)) return;
+        setPlaybackStatus(`Playback failed: ${issue}`);
         state.hls.destroy();
         state.hls = null;
       }
