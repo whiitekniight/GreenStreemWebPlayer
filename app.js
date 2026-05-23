@@ -94,6 +94,8 @@ const els = {
   nowTitle: document.querySelector("#nowTitle"),
   nextTitle: document.querySelector("#nextTitle"),
   nowTime: document.querySelector("#nowTime"),
+  streamReportButton: document.querySelector("#streamReportButton"),
+  streamReport: document.querySelector("#streamReport"),
   videoPlayer: document.querySelector("#videoPlayer"),
   fullscreenPlayer: document.querySelector("#fullscreenPlayer"),
   fullscreenVideoPlayer: document.querySelector("#fullscreenVideoPlayer"),
@@ -428,6 +430,39 @@ function setPlaybackStatus(message) {
   }
 }
 
+async function buildStreamReport() {
+  if (!state.activeChannel) {
+    els.streamReport.textContent = "Choose a channel first.";
+    return;
+  }
+
+  const video = els.videoPlayer;
+  const parts = [
+    `Channel: ${state.activeChannel.name}`,
+    `Browser: ${video.paused ? "paused" : "playing"}, time ${Math.floor(video.currentTime || 0)}s, ready ${video.readyState}/4`,
+    video.muted || video.volume === 0 ? "Audio: muted or volume is zero" : "Audio: browser volume is on",
+  ];
+
+  try {
+    const response = await fetch(`/api/diagnostics?session=${encodeURIComponent(state.sessionId)}`);
+    const result = await response.json();
+    const latestResponse = [...(result.events || [])].reverse().find((event) => event.event === "response" || event.status);
+    if (latestResponse) {
+      parts.push(
+        `Provider: HTTP ${latestResponse.status || "unknown"} ${latestResponse.contentType || ""} ${latestResponse.host ? `from ${latestResponse.host}` : ""}`.trim(),
+      );
+    }
+  } catch {
+    parts.push("Provider: diagnostics unavailable");
+  }
+
+  if (!video.paused && video.currentTime > 0 && !video.muted && video.volume > 0) {
+    parts.push("If video moves but there is no sound, suspect that channel feed or browser-incompatible audio codec.");
+  }
+
+  els.streamReport.textContent = parts.join(" | ");
+}
+
 function openFullscreenPlayer(item) {
   const meta = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
   state.playbackVideo = els.fullscreenVideoPlayer;
@@ -617,6 +652,7 @@ function playChannel(index) {
   const channel = state.channels[index];
   state.playbackVideo = els.videoPlayer;
   state.activeChannelIndex = index;
+  els.streamReport.textContent = "";
   els.currentChannelTitle.textContent = channel.name;
   els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
   els.nowTitle.textContent = channel.now || "EPG not connected yet";
@@ -1010,6 +1046,8 @@ els.favoritesOnlyButton.addEventListener("click", () => {
   els.favoritesOnlyButton.classList.toggle("is-active", state.favoritesOnly);
   renderChannels();
 });
+
+els.streamReportButton.addEventListener("click", buildStreamReport);
 
 els.resetPlaybackButton.addEventListener("click", () => {
   state.preferredLiveStreamType = "auto";

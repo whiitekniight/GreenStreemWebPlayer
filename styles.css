@@ -345,6 +345,20 @@ video {
   color: var(--green) !important;
 }
 
+.stream-report-button {
+  width: fit-content;
+  min-height: 34px;
+  margin-top: 12px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+.stream-report {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .channel-pane {
   min-width: 0;
   min-height: 0;
