@@ -579,7 +579,8 @@ function renderCategories() {
     });
 }
 
-function renderChannels() {
+function renderChannels({ preserveScroll = false } = {}) {
+  const previousScrollTop = preserveScroll ? els.channelList.scrollTop : 0;
   els.channelList.innerHTML = "";
   const list = visibleChannels();
 
@@ -636,6 +637,10 @@ function renderChannels() {
 
     row.append(number, logo, info, favorite);
 
+    row.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+
     row.addEventListener("click", (event) => {
       if (event.target.classList.contains("favorite-button")) {
         toggleFavorite(channel.name);
@@ -646,6 +651,10 @@ function renderChannels() {
 
     els.channelList.appendChild(row);
   });
+
+  if (preserveScroll) {
+    els.channelList.scrollTop = previousScrollTop;
+  }
 }
 
 function playChannel(index) {
@@ -681,7 +690,7 @@ function playChannel(index) {
     clearPlayer();
   }
 
-  renderChannels();
+  renderChannels({ preserveScroll: true });
 }
 
 function clearPlayer() {
