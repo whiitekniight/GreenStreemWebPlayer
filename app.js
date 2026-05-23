@@ -95,6 +95,7 @@ const els = {
   nextTitle: document.querySelector("#nextTitle"),
   nowTime: document.querySelector("#nowTime"),
   streamReportButton: document.querySelector("#streamReportButton"),
+  fixAudioButton: document.querySelector("#fixAudioButton"),
   streamReport: document.querySelector("#streamReport"),
   videoPlayer: document.querySelector("#videoPlayer"),
   fullscreenPlayer: document.querySelector("#fullscreenPlayer"),
@@ -463,6 +464,18 @@ async function buildStreamReport() {
   els.streamReport.textContent = parts.join(" | ");
 }
 
+function fixCurrentChannelAudio() {
+  if (!state.sessionId || state.activeChannelIndex < 0) {
+    els.streamReport.textContent = "Choose a live channel first.";
+    return;
+  }
+
+  const playUrl = `/api/transcode?session=${encodeURIComponent(state.sessionId)}&channel=${encodeURIComponent(state.activeChannelIndex)}`;
+  els.streamReport.textContent = "Fix Audio is converting this channel to browser-friendly AAC. It may take a few seconds.";
+  els.nowTime.textContent = "Fixing audio...";
+  loadStream(playUrl, "file");
+}
+
 function openFullscreenPlayer(item) {
   const meta = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
   state.playbackVideo = els.fullscreenVideoPlayer;
@@ -662,6 +675,7 @@ function playChannel(index) {
   state.playbackVideo = els.videoPlayer;
   state.activeChannelIndex = index;
   els.streamReport.textContent = "";
+  els.fixAudioButton.disabled = false;
   els.currentChannelTitle.textContent = channel.name;
   els.currentCategoryLabel.textContent = channel.category || "Uncategorized";
   els.nowTitle.textContent = channel.now || "EPG not connected yet";
@@ -1063,6 +1077,7 @@ els.favoritesOnlyButton.addEventListener("click", () => {
 });
 
 els.streamReportButton.addEventListener("click", buildStreamReport);
+els.fixAudioButton.addEventListener("click", fixCurrentChannelAudio);
 
 els.resetPlaybackButton.addEventListener("click", () => {
   state.preferredLiveStreamType = "auto";

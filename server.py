@@ -14,6 +14,8 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -36,6 +38,7 @@ MAX_EPG_BYTES = 120 * 1024 * 1024
 DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("GREENSTREEM_PORT", "8097"))
 DEFAULT_SERVER_URL_RAW = os.environ.get("GREENSTREEM_DEFAULT_SERVER_URL", "")
+FFMPEG_BIN = os.environ.get("GREENSTREEM_FFMPEG_BIN", "ffmpeg")
 SESSION_TTL_SECONDS = int(os.environ.get("GREENSTREEM_SESSION_TTL_SECONDS", str(12 * 60 * 60)))
 SESSION_CLEANUP_INTERVAL_SECONDS = 5 * 60
 USER_AGENT = (
@@ -691,6 +694,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
             return
+        if parsed.path == "/api/transcode":
+            self.handle_transcode(parsed.query)
+            return
         if parsed.path == "/api/proxy":
             self.handle_proxy(parsed.query)
             return
@@ -800,6 +806,91 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             record_diagnostic(session_id, "stream-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def handle_transcode(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        channel_raw = params.get("channel", [""])[0]
+        session = get_session(session_id)
+
+        if not session:
+            self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
+            return
+
+        ffmpeg_path = shutil.which(FFMPEG_BIN) or (FFMPEG_BIN if Path(FFMPEG_BIN).is_file() else "")
+        if not ffmpeg_path:
+            record_diagnostic(session_id, "transcode-error", details="FFmpeg is not installed.")
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "FFmpeg is not installed in this container.")
+            return
+
+        try:
+            channel = session.channels[int(channel_raw)]
+            stream_url = str(channel.get("fallbackUrl") or channel.get("url") or "")
+            if not stream_url:
+                raise ValueError("Channel has no stream URL.")
+        except Exception as exc:
+            record_diagnostic(session_id, "transcode-error", details=str(exc))
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
+
+        record_diagnostic(session_id, "transcode-start", stream_url)
+        command = [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-user_agent",
+            USER_AGENT,
+            "-i",
+            stream_url,
+            "-map",
+            "0:v:0?",
+            "-map",
+            "0:a:0?",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-ac",
+            "2",
+            "-f",
+            "mp4",
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof",
+            "pipe:1",
+        ]
+
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+        )
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        try:
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if process.poll() is None:
+                process.kill()
+            _, stderr = process.communicate(timeout=2)
+            if process.returncode not in (0, -9, None):
+                details = stderr.decode("utf-8", errors="replace").strip()[-240:]
+                record_diagnostic(session_id, "transcode-error", stream_url, details=details or "FFmpeg failed.")
 
     def proxy_url(
         self,
