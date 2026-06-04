@@ -337,9 +337,33 @@ function firstSeriesEpisode(item) {
     .find((episode) => episode && episode.id);
 }
 
-function episodeLabel(episode) {
-  const number = episode.episodeNum ? `E${episode.episodeNum}` : "";
-  return [number, episode.title || "Episode"].filter(Boolean).join(" - ");
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanEpisodeTitle(series, episode) {
+  const seriesTitle = libraryDisplayTitle(series);
+  const plainSeriesTitle = seriesTitle.replace(/\s*\((?:19|20)\d{2}\)\s*$/, "");
+  let title = String(episode.title || "Episode").trim();
+  title = title
+    .replace(new RegExp(`^${escapeRegExp(seriesTitle)}\\s*-\\s*`, "i"), "")
+    .replace(new RegExp(`^${escapeRegExp(plainSeriesTitle)}\\s*-\\s*`, "i"), "")
+    .replace(/^S\d{1,2}E\d{1,3}\s*[-–:]\s*/i, "")
+    .trim();
+  return title || "Episode";
+}
+
+function seasonEpisodeCode(season, episode) {
+  const rawSeason = String(season.season || episode.season || "");
+  const rawEpisode = String(episode.episodeNum || "");
+  if (!rawSeason || !rawEpisode) return "";
+  return `S${rawSeason.padStart(2, "0")}E${rawEpisode.padStart(2, "0")}`;
+}
+
+function seriesEpisodeLabel(series, season, episode, index) {
+  const episodeNumber = episode.episodeNum || index + 1;
+  const code = seasonEpisodeCode(season, episode);
+  return `E${episodeNumber}: ${libraryDisplayTitle(series)}${code ? ` - ${code}` : ""} - ${cleanEpisodeTitle(series, episode)}`;
 }
 
 function renderLibraryCard(item) {
@@ -397,6 +421,7 @@ function renderItemPoster(item) {
 }
 
 function renderItemDetails(item) {
+  els.itemModal.classList.toggle("is-series-modal", item.type === "series");
   renderItemPoster(item);
   els.modalCategory.textContent = item.category || "Library";
   els.modalTitle.textContent = libraryDisplayTitle(item);
@@ -433,32 +458,47 @@ function renderSeriesEpisodes(item) {
     return;
   }
 
+  const availableSeasons = item.seasons.filter((season) => (season.episodes || []).length);
+  const selectedSeason = item.selectedSeason || availableSeasons[0]?.season || item.seasons[0]?.season || "";
+  item.selectedSeason = selectedSeason;
+
+  const heading = document.createElement("h3");
+  heading.className = "series-heading";
+  heading.textContent = "Seasons";
+
+  const tabs = document.createElement("div");
+  tabs.className = "season-tabs";
+
   item.seasons.forEach((season) => {
-    const block = document.createElement("section");
-    block.className = "season-block";
-
-    const title = document.createElement("h3");
-    title.className = "season-title";
-    title.textContent = `Season ${season.season || ""}`.trim();
-
-    const list = document.createElement("div");
-    list.className = "episode-list";
-
-    (season.episodes || []).forEach((episode) => {
-      const button = document.createElement("button");
-      button.className = "episode-button";
-      button.type = "button";
-      button.textContent = episodeLabel(episode);
-      button.addEventListener("click", () => {
-        item.selectedEpisode = episode;
-        playLibraryItem(item);
-      });
-      list.appendChild(button);
+    const tab = document.createElement("button");
+    tab.className = "season-tab";
+    tab.classList.toggle("is-active", String(season.season) === String(selectedSeason));
+    tab.type = "button";
+    tab.textContent = `Season ${season.season || ""}`.trim();
+    tab.addEventListener("click", () => {
+      item.selectedSeason = season.season;
+      renderSeriesEpisodes(item);
     });
-
-    block.append(title, list);
-    els.seriesEpisodes.appendChild(block);
+    tabs.appendChild(tab);
   });
+
+  const selected = item.seasons.find((season) => String(season.season) === String(item.selectedSeason)) || item.seasons[0];
+  const list = document.createElement("div");
+  list.className = "episode-list";
+
+  (selected?.episodes || []).forEach((episode, index) => {
+    const button = document.createElement("button");
+    button.className = "episode-button";
+    button.type = "button";
+    button.textContent = seriesEpisodeLabel(item, selected, episode, index);
+    button.addEventListener("click", () => {
+      item.selectedEpisode = episode;
+      playLibraryItem(item);
+    });
+    list.appendChild(button);
+  });
+
+  els.seriesEpisodes.append(heading, tabs, list);
   els.seriesEpisodes.classList.remove("is-hidden");
 }
 
@@ -598,7 +638,7 @@ function playLibraryItem(item) {
     playTarget = {
       ...item,
       title: item.title,
-      playTitle: `${libraryDisplayTitle(item)} - ${episodeLabel(episode)}`,
+      playTitle: seriesEpisodeLabel(item, { season: episode.season }, episode, 0),
       container: extension,
     };
   }
