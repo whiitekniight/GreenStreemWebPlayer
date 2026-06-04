@@ -141,6 +141,7 @@ const els = {
   modalTitle: document.querySelector("#modalTitle"),
   modalMeta: document.querySelector("#modalMeta"),
   modalPlot: document.querySelector("#modalPlot"),
+  seriesEpisodes: document.querySelector("#seriesEpisodes"),
   playItemButton: document.querySelector("#playItemButton"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
@@ -318,13 +319,27 @@ function emptyLibraryMessage(message) {
   return empty;
 }
 
-function cleanLibraryTitle(item) {
-  return item.title.replace(/\s*-\s*(19|20)\d{2,}.*$/i, "").trim() || item.title;
+function libraryDisplayTitle(item) {
+  const year = String(item.year || item.title || "").match(/\b(19|20)\d{2}\b/)?.[0] || "";
+  let title = String(item.title || "Untitled")
+    .replace(/(\((?:19|20)\d{2}\))\d+.*$/i, "$1")
+    .replace(/\s*[-–]\s*(?:19|20)\d{2,}.*$/i, "")
+    .trim();
+  if (year && !new RegExp(`\\(${year}\\)`).test(title)) {
+    title = `${title} (${year})`;
+  }
+  return title || item.title;
 }
 
-function libraryMeta(item) {
-  const rating = String(item.rating || "").match(/\d+(\.\d+)?/)?.[0] || "";
-  return [rating ? `Rating ${rating}` : "", item.category].filter(Boolean).join(" · ");
+function firstSeriesEpisode(item) {
+  return (item.seasons || [])
+    .flatMap((season) => season.episodes || [])
+    .find((episode) => episode && episode.id);
+}
+
+function episodeLabel(episode) {
+  const number = episode.episodeNum ? `E${episode.episodeNum}` : "";
+  return [number, episode.title || "Episode"].filter(Boolean).join(" - ");
 }
 
 function renderLibraryCard(item) {
@@ -351,13 +366,9 @@ function renderLibraryCard(item) {
 
   const title = document.createElement("span");
   title.className = "library-card-title";
-  title.textContent = cleanLibraryTitle(item);
+  title.textContent = libraryDisplayTitle(item);
 
-  const meta = document.createElement("span");
-  meta.className = "library-card-meta";
-  meta.textContent = libraryMeta(item);
-
-  body.append(title, meta);
+  body.append(title);
   card.append(poster, body);
   card.addEventListener("click", () => showItemDetails(item));
   return card;
@@ -388,15 +399,71 @@ function renderItemPoster(item) {
 function renderItemDetails(item) {
   renderItemPoster(item);
   els.modalCategory.textContent = item.category || "Library";
-  els.modalTitle.textContent = item.title;
-  els.modalMeta.textContent = [item.year, item.rating, item.genre || item.category, item.duration].filter(Boolean).join(" · ");
+  els.modalTitle.textContent = libraryDisplayTitle(item);
+  els.modalMeta.textContent = [item.genre || item.category, item.duration].filter(Boolean).join(" · ");
   els.modalPlot.textContent = item.plot || "Loading description...";
-  els.playItemButton.disabled = item.type !== "movies";
-  els.playItemButton.textContent = item.type === "movies" ? "Play" : "Episodes Soon";
+
+  if (item.type === "series") {
+    renderSeriesEpisodes(item);
+    const firstEpisode = firstSeriesEpisode(item);
+    els.playItemButton.disabled = !firstEpisode;
+    els.playItemButton.textContent = firstEpisode ? "Play First Episode" : "Loading Episodes...";
+  } else {
+    els.seriesEpisodes.replaceChildren();
+    els.seriesEpisodes.classList.add("is-hidden");
+    els.playItemButton.disabled = false;
+    els.playItemButton.textContent = "Play";
+  }
+}
+
+function renderSeriesEpisodes(item) {
+  els.seriesEpisodes.replaceChildren();
+
+  if (!item.seasons) {
+    els.seriesEpisodes.classList.add("is-hidden");
+    return;
+  }
+
+  if (!item.seasons.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted-copy";
+    empty.textContent = "No episodes found.";
+    els.seriesEpisodes.appendChild(empty);
+    els.seriesEpisodes.classList.remove("is-hidden");
+    return;
+  }
+
+  item.seasons.forEach((season) => {
+    const block = document.createElement("section");
+    block.className = "season-block";
+
+    const title = document.createElement("h3");
+    title.className = "season-title";
+    title.textContent = `Season ${season.season || ""}`.trim();
+
+    const list = document.createElement("div");
+    list.className = "episode-list";
+
+    (season.episodes || []).forEach((episode) => {
+      const button = document.createElement("button");
+      button.className = "episode-button";
+      button.type = "button";
+      button.textContent = episodeLabel(episode);
+      button.addEventListener("click", () => {
+        item.selectedEpisode = episode;
+        playLibraryItem(item);
+      });
+      list.appendChild(button);
+    });
+
+    block.append(title, list);
+    els.seriesEpisodes.appendChild(block);
+  });
+  els.seriesEpisodes.classList.remove("is-hidden");
 }
 
 async function loadItemDetails(item) {
-  if (!state.sessionId || item.type !== "movies") {
+  if (!state.sessionId) {
     els.modalPlot.textContent = item.plot || "No description available.";
     return;
   }
@@ -474,11 +541,11 @@ async function buildStreamReport() {
 }
 
 function openFullscreenPlayer(item) {
-  const meta = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
+  const meta = [item.year, item.category].filter(Boolean).join(" · ") || "Library";
   state.playbackVideo = els.fullscreenVideoPlayer;
-  els.fullscreenTitle.textContent = item.title;
+  els.fullscreenTitle.textContent = item.playTitle || libraryDisplayTitle(item);
   els.fullscreenMeta.textContent = meta;
-  els.fullscreenStatus.textContent = "Loading movie...";
+  els.fullscreenStatus.textContent = "Loading...";
   els.fullscreenPlayer.classList.remove("is-hidden");
   els.fullscreenPlayer.focus();
   showFullscreenControls();
@@ -514,21 +581,38 @@ function showFullscreenControls() {
 }
 
 function playLibraryItem(item) {
-  if (item.type !== "movies") {
-    els.libraryStatus.textContent = "Series episode browsing is next.";
-    return;
+  let playTarget = item;
+  let media = "movies";
+  let id = item.id;
+  let extension = item.container || "mp4";
+
+  if (item.type === "series") {
+    const episode = item.selectedEpisode || firstSeriesEpisode(item);
+    if (!episode) {
+      els.modalPlot.textContent = item.plot || "Episodes are still loading.";
+      return;
+    }
+    media = "series";
+    id = episode.id;
+    extension = episode.container || "mp4";
+    playTarget = {
+      ...item,
+      title: item.title,
+      playTitle: `${libraryDisplayTitle(item)} - ${episodeLabel(episode)}`,
+      container: extension,
+    };
   }
 
-  const playUrl = `/api/vod?session=${encodeURIComponent(state.sessionId)}&id=${encodeURIComponent(item.id)}&ext=${encodeURIComponent(item.container || "mp4")}`;
+  const playUrl = `/api/vod?session=${encodeURIComponent(state.sessionId)}&media=${encodeURIComponent(media)}&id=${encodeURIComponent(id)}&ext=${encodeURIComponent(extension)}`;
   state.activeChannelIndex = -1;
   state.activeChannel = null;
   els.currentCategoryLabel.textContent = item.category || "Movies";
-  els.currentChannelTitle.textContent = item.title;
-  els.nowTitle.textContent = item.title;
-  els.nextTitle.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ") || "Movie";
+  els.currentChannelTitle.textContent = playTarget.playTitle || libraryDisplayTitle(item);
+  els.nowTitle.textContent = playTarget.playTitle || libraryDisplayTitle(item);
+  els.nextTitle.textContent = [item.year, item.category].filter(Boolean).join(" · ") || "Library";
   closeItemDetails();
-  openFullscreenPlayer(item);
-  loadStream(playUrl, item.container === "m3u8" ? "hls" : "file");
+  openFullscreenPlayer(playTarget);
+  loadStream(playUrl, extension === "m3u8" ? "hls" : "file");
 }
 
 function setLoginMode(mode) {

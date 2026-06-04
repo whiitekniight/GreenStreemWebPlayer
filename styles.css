@@ -576,6 +576,51 @@ video {
   line-height: 1.5;
 }
 
+.series-episodes {
+  display: grid;
+  max-height: min(34vh, 320px);
+  margin: 18px 0;
+  padding-right: 6px;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.season-block {
+  display: grid;
+  gap: 8px;
+}
+
+.season-title {
+  margin: 0;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.episode-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.episode-button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: var(--text);
+  background: rgba(20, 31, 36, 0.9);
+  font-weight: 800;
+  text-align: left;
+}
+
+.episode-button:hover,
+.episode-button:focus {
+  border-color: var(--green);
+  background: rgba(52, 211, 153, 0.18);
+}
+
 .fullscreen-player {
   position: fixed;
   inset: 0;

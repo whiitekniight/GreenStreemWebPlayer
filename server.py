@@ -690,6 +690,70 @@ def load_xtream_movie_details(session: Session, item_id: str) -> dict[str, str]:
     }
 
 
+def load_xtream_series_details(session: Session, item_id: str) -> dict[str, Any]:
+    base_url = session.credentials.get("serverUrl", "")
+    username = session.credentials.get("username", "")
+    password = session.credentials.get("password", "")
+    if not base_url or not username or not password or not item_id:
+        return {}
+
+    query = urlencode({"username": username, "password": password, "action": "get_series_info", "series_id": item_id})
+    data = fetch_json(f"{base_url}/player_api.php?{query}")
+    info = data.get("info") if isinstance(data, dict) else {}
+    episodes_by_season = data.get("episodes") if isinstance(data, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    if not isinstance(episodes_by_season, dict):
+        episodes_by_season = {}
+
+    def first_text(*values: Any) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text and text.lower() not in {"n/a", "null", "none"}:
+                return text
+        return ""
+
+    seasons: list[dict[str, Any]] = []
+    for season_key in sorted(episodes_by_season.keys(), key=lambda value: int(value) if str(value).isdigit() else str(value)):
+        raw_episodes = episodes_by_season.get(season_key)
+        if not isinstance(raw_episodes, list):
+            continue
+
+        episodes: list[dict[str, str]] = []
+        for episode in raw_episodes:
+            if not isinstance(episode, dict):
+                continue
+
+            episode_id = first_text(episode.get("id"), episode.get("stream_id"), episode.get("episode_id"))
+            if not episode_id:
+                continue
+
+            episode_info = episode.get("info") if isinstance(episode.get("info"), dict) else {}
+            episodes.append(
+                {
+                    "id": episode_id,
+                    "title": first_text(episode.get("title"), episode.get("name"), episode_info.get("name"), f"Episode {len(episodes) + 1}"),
+                    "episodeNum": first_text(episode.get("episode_num"), episode.get("episode"), episode_info.get("episode_num")),
+                    "season": str(season_key),
+                    "container": first_text(episode.get("container_extension"), episode_info.get("container_extension"), "mp4"),
+                    "plot": first_text(episode.get("plot"), episode.get("description"), episode_info.get("plot"), episode_info.get("description")),
+                }
+            )
+
+        seasons.append({"season": str(season_key), "episodes": episodes})
+
+    return {
+        "plot": first_text(info.get("plot"), info.get("description"), info.get("overview")),
+        "rating": first_text(info.get("rating")),
+        "year": first_text(info.get("releaseDate"), info.get("releasedate"), info.get("year")),
+        "genre": first_text(info.get("genre")),
+        "duration": first_text(info.get("duration")),
+        "poster": first_text(info.get("cover"), info.get("cover_big"), info.get("movie_image")),
+        "seasons": seasons,
+        "debugFields": ",".join(sorted(set(info.keys()))),
+    }
+
+
 class GreenStreemHandler(BaseHTTPRequestHandler):
     server_version = "GreenStreemWebPlayer/0.1"
 
@@ -968,18 +1032,21 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if not has_xtream_credentials(session):
             self.write_json({"error": "Detailed metadata requires Xtream login."}, HTTPStatus.BAD_REQUEST)
             return
-        if media_type != "movies":
-            self.write_json({"details": {}})
-            return
-
         try:
-            self.write_json({"details": load_xtream_movie_details(session, item_id)})
+            if media_type == "movies":
+                details = load_xtream_movie_details(session, item_id)
+            elif media_type == "series":
+                details = load_xtream_series_details(session, item_id)
+            else:
+                details = {}
+            self.write_json({"details": details})
         except Exception as exc:
             self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
     def handle_vod(self, query: str) -> None:
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
+        media_type = params.get("media", ["movies"])[0]
         item_id = params.get("id", [""])[0]
         extension = params.get("ext", ["mp4"])[0] or "mp4"
         session = get_session(session_id)
@@ -998,7 +1065,8 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
 
         safe_ext = re.sub(r"[^A-Za-z0-9]", "", extension) or "mp4"
-        stream_url = f"{base_url}/movie/{quote(username)}/{quote(password)}/{quote(item_id)}.{safe_ext}"
+        stream_path = "series" if media_type == "series" else "movie"
+        stream_url = f"{base_url}/{stream_path}/{quote(username)}/{quote(password)}/{quote(item_id)}.{safe_ext}"
         try:
             self.proxy_url(stream_url, session_id=session_id, session=session)
         except Exception as exc:
