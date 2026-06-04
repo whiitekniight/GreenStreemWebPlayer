@@ -319,15 +319,12 @@ function emptyLibraryMessage(message) {
 }
 
 function cleanLibraryTitle(item) {
-  const year = String(item.year || "").match(/\b(19|20)\d{2}\b/)?.[0] || "";
-  if (!year) return item.title;
-  return item.title.replace(new RegExp(`\\s*[-–]\\s*${year}\\d*\\s*$`), "").trim() || item.title;
+  return item.title.replace(/\s*-\s*(19|20)\d{2,}.*$/i, "").trim() || item.title;
 }
 
 function libraryMeta(item) {
-  const year = String(item.year || "").match(/\b(19|20)\d{2}\b/)?.[0] || "";
   const rating = String(item.rating || "").match(/\d+(\.\d+)?/)?.[0] || "";
-  return [year, rating ? `Rating ${rating}` : "", item.category].filter(Boolean).join(" · ");
+  return [rating ? `Rating ${rating}` : "", item.category].filter(Boolean).join(" · ");
 }
 
 function renderLibraryCard(item) {
