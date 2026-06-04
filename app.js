@@ -248,6 +248,10 @@ async function loadLibrary(type) {
 
   try {
     const response = await fetch(`/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}`);
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Session needs refreshed. Go back and sign in again.");
+    }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Library failed to load.");
 
