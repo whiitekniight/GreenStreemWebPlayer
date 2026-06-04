@@ -256,7 +256,7 @@ async function loadLibrary(type, category = "") {
     library.categories = result.categories || ["All"];
     library.items = result.items || [];
     library.loaded = true;
-    library.selectedCategory = category || result.selectedCategory || "All";
+    library.selectedCategory = result.selectedCategory || category || "All";
     els.libraryStatus.textContent = `Loaded ${library.items.length} ${type === "movies" ? "movies" : "series"}.`;
   } catch (error) {
     els.libraryStatus.textContent = error.message || "Library failed to load.";

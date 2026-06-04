@@ -937,6 +937,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
         media_type = params.get("type", [""])[0]
+        selected_category = params.get("category", [""])[0]
         session = get_session(session_id)
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
@@ -951,7 +952,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            self.write_json(load_xtream_library(session, media_type))
+            self.write_json(load_xtream_library(session, media_type, selected_category))
         except Exception as exc:
             self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
