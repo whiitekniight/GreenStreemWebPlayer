@@ -256,7 +256,7 @@ async function loadLibrary(type, category = "") {
     library.categories = result.categories || ["All"];
     library.items = result.items || [];
     library.loaded = true;
-    library.selectedCategory = result.selectedCategory || category || "All";
+    library.selectedCategory = category || result.selectedCategory || "All";
     els.libraryStatus.textContent = `Loaded ${library.items.length} ${type === "movies" ? "movies" : "series"}.`;
   } catch (error) {
     els.libraryStatus.textContent = error.message || "Library failed to load.";
@@ -318,6 +318,18 @@ function emptyLibraryMessage(message) {
   return empty;
 }
 
+function cleanLibraryTitle(item) {
+  const year = String(item.year || "").match(/\b(19|20)\d{2}\b/)?.[0] || "";
+  if (!year) return item.title;
+  return item.title.replace(new RegExp(`\\s*[-–]\\s*${year}\\d*\\s*$`), "").trim() || item.title;
+}
+
+function libraryMeta(item) {
+  const year = String(item.year || "").match(/\b(19|20)\d{2}\b/)?.[0] || "";
+  const rating = String(item.rating || "").match(/\d+(\.\d+)?/)?.[0] || "";
+  return [year, rating ? `Rating ${rating}` : "", item.category].filter(Boolean).join(" · ");
+}
+
 function renderLibraryCard(item) {
   const card = document.createElement("button");
   card.className = "library-card";
@@ -342,17 +354,13 @@ function renderLibraryCard(item) {
 
   const title = document.createElement("span");
   title.className = "library-card-title";
-  title.textContent = item.title;
+  title.textContent = cleanLibraryTitle(item);
 
   const meta = document.createElement("span");
   meta.className = "library-card-meta";
-  meta.textContent = [item.year, item.rating, item.category].filter(Boolean).join(" · ");
+  meta.textContent = libraryMeta(item);
 
-  const plot = document.createElement("span");
-  plot.className = "library-card-plot";
-  plot.textContent = item.plot || "";
-
-  body.append(title, meta, plot);
+  body.append(title, meta);
   card.append(poster, body);
   card.addEventListener("click", () => showItemDetails(item));
   return card;

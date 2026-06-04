@@ -694,6 +694,7 @@ video {
 
 .library-card {
   min-width: 0;
+  align-self: start;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -727,14 +728,17 @@ video {
 }
 
 .library-card-body {
+  display: grid;
+  gap: 6px;
   padding: 12px;
 }
 
 .library-card-title {
-  min-height: 38px;
-  margin: 0 0 8px;
+  min-height: 36px;
+  margin: 0;
   font-size: 14px;
   font-weight: 900;
+  line-height: 1.25;
 }
 
 .library-card-meta,
