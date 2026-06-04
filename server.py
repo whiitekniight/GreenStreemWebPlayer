@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent
 MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
 MAX_EPG_BYTES = 120 * 1024 * 1024
 DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
-DEFAULT_PORT = int(os.environ.get("GREENSTREEM_PORT", "8097"))
+DEFAULT_PORT = int(os.environ.get("PORT") or os.environ.get("GREENSTREEM_PORT", "8097"))
 DEFAULT_SERVER_URL_RAW = os.environ.get(
     "GREENSTREEM_DEFAULT_SERVER_URL",
     "https://kennye71.trustissues.life",

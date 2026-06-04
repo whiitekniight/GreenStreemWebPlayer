@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: greenstreem-web-player
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: GREENSTREEM_HOST
+        value: 0.0.0.0
+      - key: GREENSTREEM_SESSION_TTL_SECONDS
+        value: 43200
+      - key: GREENSTREEM_DEFAULT_SERVER_URL
+        value: https://kennye71.trustissues.life
