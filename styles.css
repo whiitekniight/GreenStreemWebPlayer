@@ -549,7 +549,7 @@ video {
 
 .item-modal.is-series-modal {
   place-items: stretch;
-  padding: 5vh 6vw;
+  padding: 4vh 5vw;
   background: rgba(0, 0, 0, 0.54);
 }
 
@@ -577,11 +577,15 @@ video {
 }
 
 .item-modal.is-series-modal .item-modal-content {
-  grid-template-columns: minmax(150px, 220px) 1fr;
+  grid-template-columns: minmax(120px, 190px) 1fr;
   align-items: start;
-  gap: 34px;
+  gap: 28px;
   height: 100%;
-  padding: 34px 42px;
+  padding: 28px 36px;
+}
+
+.item-modal.is-series-modal .modal-poster {
+  max-height: 340px;
 }
 
 .modal-poster {
@@ -596,9 +600,16 @@ video {
 }
 
 .item-modal.is-series-modal .item-modal-info h2 {
-  margin-bottom: 16px;
-  font-size: clamp(34px, 4.2vw, 54px);
+  margin-bottom: 10px;
+  font-size: clamp(32px, 3.4vw, 48px);
   text-shadow: 0 2px 2px rgba(0, 0, 0, 0.42);
+}
+
+.item-modal.is-series-modal .modal-plot {
+  max-width: 960px;
+  margin: 10px 0 16px;
+  font-size: 16px;
+  line-height: 1.42;
 }
 
 .modal-plot {
@@ -616,10 +627,10 @@ video {
 }
 
 .item-modal.is-series-modal .series-episodes {
-  max-height: min(50vh, 520px);
-  margin-top: 22px;
-  gap: 18px;
-  overflow: hidden;
+  max-height: none;
+  margin-top: 16px;
+  gap: 12px;
+  overflow: visible;
 }
 
 .series-heading {
@@ -634,17 +645,17 @@ video {
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  padding: 0 2px 8px;
+  padding: 2px 4px 8px;
 }
 
 .season-tab {
-  flex: 0 0 150px;
-  min-height: 58px;
+  flex: 0 0 142px;
+  min-height: 54px;
   border: 1px solid rgba(86, 180, 255, 0.35);
   border-radius: 7px;
   color: #eaf7ff;
   background: linear-gradient(180deg, rgba(14, 124, 220, 0.92), rgba(7, 76, 158, 0.92));
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 900;
   text-shadow: 0 2px 2px rgba(0, 0, 0, 0.45);
 }
@@ -679,9 +690,9 @@ video {
 
 .item-modal.is-series-modal .episode-list {
   grid-template-columns: 1fr;
-  max-height: min(36vh, 390px);
+  max-height: min(36vh, 360px);
   overflow-y: auto;
-  gap: 3px;
+  gap: 4px;
 }
 
 .episode-button {
@@ -696,13 +707,13 @@ video {
 }
 
 .item-modal.is-series-modal .episode-button {
-  min-height: 68px;
+  min-height: 56px;
   border-color: rgba(80, 171, 255, 0.28);
   border-radius: 7px;
-  padding: 16px 22px;
+  padding: 12px 18px;
   color: #f2fbff;
   background: linear-gradient(180deg, rgba(15, 130, 221, 0.95), rgba(6, 96, 194, 0.95));
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 900;
   text-shadow: 0 2px 2px rgba(0, 0, 0, 0.44);
 }
