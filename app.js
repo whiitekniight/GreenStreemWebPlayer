@@ -80,6 +80,7 @@ const els = {
   libraryView: document.querySelector("#libraryView"),
   accountView: document.querySelector("#accountView"),
   loginForm: document.querySelector("#loginForm"),
+  modeTabsContainer: document.querySelector("#modeTabs"),
   modeTabs: document.querySelectorAll(".mode-tab"),
   xtreamFields: document.querySelector("#xtreamFields"),
   serverUrlField: document.querySelector("#serverUrlField"),
@@ -164,8 +165,10 @@ async function loadPublicConfig() {
     const response = await fetch("/api/config");
     const config = await response.json();
     state.defaultServerConfigured = Boolean(config.defaultServerConfigured);
+    els.modeTabsContainer.classList.toggle("is-hidden", state.defaultServerConfigured);
     els.serverUrlField.classList.toggle("is-hidden", state.defaultServerConfigured);
     if (state.defaultServerConfigured) {
+      setLoginMode("xtream");
       els.serverUrlInput.value = "";
       setStatus("GreenStreem server is configured. Enter your playlist username and password.");
     }

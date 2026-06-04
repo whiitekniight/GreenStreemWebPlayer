@@ -35,7 +35,10 @@ MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
 MAX_EPG_BYTES = 120 * 1024 * 1024
 DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("GREENSTREEM_PORT", "8097"))
-DEFAULT_SERVER_URL_RAW = os.environ.get("GREENSTREEM_DEFAULT_SERVER_URL", "")
+DEFAULT_SERVER_URL_RAW = os.environ.get(
+    "GREENSTREEM_DEFAULT_SERVER_URL",
+    "https://kennye71.trustissues.life",
+)
 SESSION_TTL_SECONDS = int(os.environ.get("GREENSTREEM_SESSION_TTL_SECONDS", str(12 * 60 * 60)))
 SESSION_CLEANUP_INTERVAL_SECONDS = 5 * 60
 USER_AGENT = (
@@ -489,6 +492,14 @@ def get_session(session_id: str) -> Session | None:
     return session
 
 
+def has_xtream_credentials(session: Session) -> bool:
+    return bool(
+        session.credentials.get("serverUrl")
+        and session.credentials.get("username")
+        and session.credentials.get("password")
+    )
+
+
 def xtream_api_url(base_url: str, username: str, password: str, action: str) -> str:
     query = urlencode({"username": username, "password": password, "action": action})
     return f"{base_url}/player_api.php?{query}"
@@ -686,7 +697,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.write_json({"ok": True})
             return
         if parsed.path == "/api/config":
-            self.write_json({"defaultServerConfigured": False})
+            self.write_json({"defaultServerConfigured": bool(DEFAULT_SERVER_URL)})
             return
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
@@ -736,11 +747,11 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 if epg_url:
                     start_epg_load(session_id, epg_url)
             elif mode == "xtream":
-                base_url = normalize_url(str(payload.get("serverUrl") or ""))
+                base_url = normalize_url(str(payload.get("serverUrl") or "")) or DEFAULT_SERVER_URL
                 username = str(payload.get("username") or "").strip()
                 password = str(payload.get("password") or "")
                 if not base_url or not username or not password:
-                    raise ValueError("Enter server URL, username, and password.")
+                    raise ValueError("Enter username and password.")
                 try:
                     base_url, account = resolve_xtream_base_url(base_url, username, password)
                     session = Session(
@@ -905,7 +916,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
             return
-        if session.mode != "xtream":
+        if not has_xtream_credentials(session):
             self.write_json({"error": "Movies and Series require Xtream login in this build."}, HTTPStatus.BAD_REQUEST)
             return
 
@@ -923,7 +934,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
             return
-        if session.mode != "xtream":
+        if not has_xtream_credentials(session):
             self.write_json({"error": "Detailed metadata requires Xtream login."}, HTTPStatus.BAD_REQUEST)
             return
         if media_type != "movies":
@@ -944,7 +955,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if not session:
             self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
             return
-        if session.mode != "xtream":
+        if not has_xtream_credentials(session):
             self.send_error(HTTPStatus.BAD_REQUEST, "VOD requires Xtream login.")
             return
 
