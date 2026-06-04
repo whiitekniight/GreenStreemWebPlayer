@@ -916,6 +916,11 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
             return
+        print(
+            f"Library request type={media_type} mode={session.mode} "
+            f"has_xtream_credentials={has_xtream_credentials(session)}",
+            flush=True,
+        )
         if not has_xtream_credentials(session):
             self.write_json({"error": "Movies and Series require Xtream login in this build."}, HTTPStatus.BAD_REQUEST)
             return
