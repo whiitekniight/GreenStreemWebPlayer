@@ -750,6 +750,14 @@ video {
   object-fit: contain;
 }
 
+.fullscreen-player[data-fit="cover"] video {
+  object-fit: cover;
+}
+
+.fullscreen-player[data-fit="fill"] video {
+  object-fit: fill;
+}
+
 .fullscreen-topbar {
   position: absolute;
   top: 0;
@@ -763,6 +771,11 @@ video {
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
+}
+
+.fullscreen-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .fullscreen-player.is-controls-visible .fullscreen-topbar {
@@ -788,6 +801,109 @@ video {
   background: rgba(0, 0, 0, 0.62);
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+.player-options-panel {
+  position: absolute;
+  top: 74px;
+  right: 18px;
+  z-index: 2;
+  width: min(360px, calc(100vw - 36px));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--text);
+  background: rgba(8, 15, 18, 0.94);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.46);
+}
+
+.player-option-section + .player-option-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-option-section h3 {
+  margin: 0 0 8px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.player-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-option-button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  font-weight: 800;
+}
+
+.player-option-button.is-active,
+.player-option-button:hover,
+.player-option-button:focus {
+  border-color: var(--green);
+  color: #06120d;
+  background: var(--green);
+}
+
+.next-episode-prompt {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  width: min(380px, calc(100vw - 36px));
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--text);
+  background: rgba(8, 15, 18, 0.92);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.46);
+}
+
+.next-episode-prompt strong,
+.next-episode-prompt span {
+  display: block;
+}
+
+.next-episode-prompt strong {
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+
+.next-episode-prompt span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.next-episode-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.next-episode-actions button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  font-weight: 900;
+}
+
+.next-episode-actions button:first-child {
+  border-color: var(--green);
+  color: #06120d;
+  background: var(--green);
 }
 
 .placeholder-view {

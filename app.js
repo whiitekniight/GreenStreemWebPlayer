@@ -61,6 +61,12 @@ const state = {
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
   pendingTsPreference: false,
+  activeSeriesItem: null,
+  activeEpisode: null,
+  nextEpisode: null,
+  autoPlayNext: localStorage.getItem("greenstreem:autoPlayNext") !== "false",
+  nextPromptShown: false,
+  videoFit: localStorage.getItem("greenstreem:videoFit") || "contain",
   account: {},
   guide: {},
   guidePollTimer: null,
@@ -103,6 +109,13 @@ const els = {
   fullscreenTitle: document.querySelector("#fullscreenTitle"),
   fullscreenMeta: document.querySelector("#fullscreenMeta"),
   fullscreenStatus: document.querySelector("#fullscreenStatus"),
+  nextEpisodePrompt: document.querySelector("#nextEpisodePrompt"),
+  nextEpisodeTitle: document.querySelector("#nextEpisodeTitle"),
+  nextEpisodeCountdown: document.querySelector("#nextEpisodeCountdown"),
+  playNextEpisodeButton: document.querySelector("#playNextEpisodeButton"),
+  cancelNextEpisodeButton: document.querySelector("#cancelNextEpisodeButton"),
+  playerOptionsButton: document.querySelector("#playerOptionsButton"),
+  playerOptionsPanel: document.querySelector("#playerOptionsPanel"),
   closeFullscreenPlayerButton: document.querySelector("#closeFullscreenPlayerButton"),
   categoryDrawer: document.querySelector("#categoryDrawer"),
   drawerScrim: document.querySelector("#drawerScrim"),
@@ -337,6 +350,18 @@ function firstSeriesEpisode(item) {
     .find((episode) => episode && episode.id);
 }
 
+function seriesEpisodeQueue(item) {
+  return (item.seasons || [])
+    .flatMap((season) => (season.episodes || []).map((episode, index) => ({ season, episode, index })))
+    .filter((entry) => entry.episode?.id);
+}
+
+function nextSeriesEpisode(item, currentEpisode) {
+  const queue = seriesEpisodeQueue(item);
+  const currentIndex = queue.findIndex((entry) => String(entry.episode.id) === String(currentEpisode?.id));
+  return currentIndex >= 0 ? queue[currentIndex + 1] || null : null;
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -364,6 +389,12 @@ function seriesEpisodeLabel(series, season, episode, index) {
   const episodeNumber = episode.episodeNum || index + 1;
   const code = seasonEpisodeCode(season, episode);
   return `E${episodeNumber}: ${libraryDisplayTitle(series)}${code ? ` - ${code}` : ""} - ${cleanEpisodeTitle(series, episode)}`;
+}
+
+function shortEpisodeLabel(series, season, episode, index) {
+  const episodeNumber = episode.episodeNum || index + 1;
+  const code = seasonEpisodeCode(season, episode);
+  return `${code || `E${episodeNumber}`} - ${cleanEpisodeTitle(series, episode)}`;
 }
 
 function renderLibraryCard(item) {
@@ -586,6 +617,8 @@ function openFullscreenPlayer(item) {
   els.fullscreenTitle.textContent = item.playTitle || libraryDisplayTitle(item);
   els.fullscreenMeta.textContent = meta;
   els.fullscreenStatus.textContent = "Loading...";
+  els.playerOptionsPanel.classList.add("is-hidden");
+  applyVideoFit();
   els.fullscreenPlayer.classList.remove("is-hidden");
   els.fullscreenPlayer.focus();
   showFullscreenControls();
@@ -600,6 +633,12 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   if (!isFullscreenPlayerOpen()) return;
   window.clearTimeout(state.fullscreenControlsTimer);
   state.fullscreenControlsTimer = null;
+  hideNextEpisodePrompt();
+  state.activeSeriesItem = null;
+  state.activeEpisode = null;
+  state.nextEpisode = null;
+  state.nextPromptShown = false;
+  els.playerOptionsPanel.classList.add("is-hidden");
   clearPlayer();
   els.fullscreenPlayer.classList.add("is-hidden");
   els.fullscreenPlayer.classList.remove("is-controls-visible");
@@ -616,8 +655,163 @@ function showFullscreenControls() {
   els.fullscreenPlayer.classList.add("is-controls-visible");
   window.clearTimeout(state.fullscreenControlsTimer);
   state.fullscreenControlsTimer = window.setTimeout(() => {
+    if (!els.playerOptionsPanel.classList.contains("is-hidden")) return;
     els.fullscreenPlayer.classList.remove("is-controls-visible");
   }, 1800);
+}
+
+function applyVideoFit() {
+  els.fullscreenPlayer.dataset.fit = state.videoFit;
+}
+
+function optionButton(label, active, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "player-option-button";
+  button.classList.toggle("is-active", active);
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function optionSection(title, buttons) {
+  const section = document.createElement("section");
+  section.className = "player-option-section";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const row = document.createElement("div");
+  row.className = "player-option-row";
+  buttons.forEach((button) => row.appendChild(button));
+  section.append(heading, row);
+  return section;
+}
+
+function audioTrackButtons() {
+  const video = activeVideo();
+  const buttons = [];
+  if (state.hls?.audioTracks?.length) {
+    state.hls.audioTracks.forEach((track, index) => {
+      buttons.push(optionButton(track.name || track.lang || `Audio ${index + 1}`, state.hls.audioTrack === index, () => {
+        state.hls.audioTrack = index;
+        renderPlayerOptions();
+      }));
+    });
+    return buttons;
+  }
+
+  const tracks = video.audioTracks ? Array.from(video.audioTracks) : [];
+  tracks.forEach((track, index) => {
+    buttons.push(optionButton(track.label || track.language || `Audio ${index + 1}`, track.enabled, () => {
+      tracks.forEach((candidate, candidateIndex) => {
+        candidate.enabled = candidateIndex === index;
+      });
+      renderPlayerOptions();
+    }));
+  });
+  return buttons.length ? buttons : [optionButton("Default", true, () => {})];
+}
+
+function captionButtons() {
+  const tracks = Array.from(activeVideo().textTracks || []);
+  const buttons = [optionButton("Off", tracks.every((track) => track.mode !== "showing"), () => {
+    tracks.forEach((track) => {
+      track.mode = "disabled";
+    });
+    renderPlayerOptions();
+  })];
+
+  tracks.forEach((track, index) => {
+    buttons.push(optionButton(track.label || track.language || `CC ${index + 1}`, track.mode === "showing", () => {
+      tracks.forEach((candidate, candidateIndex) => {
+        candidate.mode = candidateIndex === index ? "showing" : "disabled";
+      });
+      renderPlayerOptions();
+    }));
+  });
+  return buttons;
+}
+
+function renderPlayerOptions() {
+  els.playerOptionsPanel.replaceChildren();
+  const fitButtons = [
+    optionButton("Fit", state.videoFit === "contain", () => {
+      state.videoFit = "contain";
+      localStorage.setItem("greenstreem:videoFit", state.videoFit);
+      applyVideoFit();
+      renderPlayerOptions();
+    }),
+    optionButton("Fill", state.videoFit === "cover", () => {
+      state.videoFit = "cover";
+      localStorage.setItem("greenstreem:videoFit", state.videoFit);
+      applyVideoFit();
+      renderPlayerOptions();
+    }),
+    optionButton("Stretch", state.videoFit === "fill", () => {
+      state.videoFit = "fill";
+      localStorage.setItem("greenstreem:videoFit", state.videoFit);
+      applyVideoFit();
+      renderPlayerOptions();
+    }),
+  ];
+
+  els.playerOptionsPanel.append(
+    optionSection("Picture Size", fitButtons),
+    optionSection("Series", [
+      optionButton("Auto Next On", state.autoPlayNext, () => {
+        state.autoPlayNext = true;
+        localStorage.setItem("greenstreem:autoPlayNext", "true");
+        if (state.nextEpisode) {
+          els.nextEpisodeCountdown.textContent = "Auto plays when this episode ends";
+          els.cancelNextEpisodeButton.textContent = "Cancel Auto";
+        }
+        renderPlayerOptions();
+      }),
+      optionButton("Auto Next Off", !state.autoPlayNext, () => {
+        state.autoPlayNext = false;
+        localStorage.setItem("greenstreem:autoPlayNext", "false");
+        if (state.nextEpisode) {
+          els.nextEpisodeCountdown.textContent = "Auto next is off";
+          els.cancelNextEpisodeButton.textContent = "Auto Off";
+        }
+        renderPlayerOptions();
+      }),
+    ]),
+    optionSection("Audio", audioTrackButtons()),
+    optionSection("Captions", captionButtons()),
+  );
+}
+
+function togglePlayerOptions() {
+  renderPlayerOptions();
+  els.playerOptionsPanel.classList.toggle("is-hidden");
+  showFullscreenControls();
+}
+
+function hideNextEpisodePrompt() {
+  els.nextEpisodePrompt.classList.add("is-hidden");
+}
+
+function showNextEpisodePrompt(force = false) {
+  if (!state.activeSeriesItem || !state.nextEpisode) return;
+  if (!force && state.nextPromptShown) return;
+
+  state.nextPromptShown = true;
+  els.nextEpisodeTitle.textContent = `Next: ${shortEpisodeLabel(
+    state.activeSeriesItem,
+    state.nextEpisode.season,
+    state.nextEpisode.episode,
+    state.nextEpisode.index,
+  )}`;
+  els.nextEpisodeCountdown.textContent = state.autoPlayNext ? "Auto plays when this episode ends" : "Auto next is off";
+  els.cancelNextEpisodeButton.textContent = state.autoPlayNext ? "Cancel Auto" : "Auto Off";
+  els.nextEpisodePrompt.classList.remove("is-hidden");
+  showFullscreenControls();
+}
+
+function playNextSeriesEpisode() {
+  if (!state.activeSeriesItem || !state.nextEpisode) return;
+  state.activeSeriesItem.selectedEpisode = state.nextEpisode.episode;
+  playLibraryItem(state.activeSeriesItem);
 }
 
 function playLibraryItem(item) {
@@ -625,6 +819,11 @@ function playLibraryItem(item) {
   let media = "movies";
   let id = item.id;
   let extension = item.container || "mp4";
+  state.activeSeriesItem = null;
+  state.activeEpisode = null;
+  state.nextEpisode = null;
+  state.nextPromptShown = false;
+  hideNextEpisodePrompt();
 
   if (item.type === "series") {
     const episode = item.selectedEpisode || firstSeriesEpisode(item);
@@ -635,6 +834,9 @@ function playLibraryItem(item) {
     media = "series";
     id = episode.id;
     extension = episode.container || "mp4";
+    state.activeSeriesItem = item;
+    state.activeEpisode = episode;
+    state.nextEpisode = nextSeriesEpisode(item, episode);
     playTarget = {
       ...item,
       title: item.title,
@@ -883,8 +1085,10 @@ function loadStream(playUrl, streamType) {
     });
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
       setPlaybackStatus("HLS stream ready.");
+      renderPlayerOptions();
       attemptPlay();
     });
+    state.hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, renderPlayerOptions);
     state.hls.loadSource(playUrl);
     state.hls.attachMedia(video);
     return;
@@ -920,6 +1124,7 @@ function loadStream(playUrl, streamType) {
     ? "HLS helper did not load. Refresh the page and try again."
     : "Trying direct stream playback. Some .ts streams need conversion.");
   attemptPlay();
+  renderPlayerOptions();
 }
 
 function tryFallbackStream(reason) {
@@ -961,6 +1166,24 @@ function attachVideoEvents(video) {
     setPlaybackStatus("Stream stalled while loading video data.");
   });
 
+  video.addEventListener("timeupdate", () => {
+    if (video !== activeVideo() || !state.activeSeriesItem || !state.nextEpisode || !Number.isFinite(video.duration)) return;
+    const remaining = video.duration - video.currentTime;
+    if (remaining > 0 && remaining <= 45) {
+      showNextEpisodePrompt();
+    }
+  });
+
+  video.addEventListener("ended", () => {
+    if (video !== activeVideo() || !state.activeSeriesItem || !state.nextEpisode) return;
+    if (state.autoPlayNext) {
+      playNextSeriesEpisode();
+    } else {
+      showNextEpisodePrompt(true);
+      setPlaybackStatus("Episode finished.");
+    }
+  });
+
   video.addEventListener("error", () => {
     const error = video.error;
     const message =
@@ -976,6 +1199,14 @@ function attachVideoEvents(video) {
 
 attachVideoEvents(els.videoPlayer);
 attachVideoEvents(els.fullscreenVideoPlayer);
+
+els.playNextEpisodeButton.addEventListener("click", playNextSeriesEpisode);
+els.cancelNextEpisodeButton.addEventListener("click", () => {
+  state.autoPlayNext = false;
+  localStorage.setItem("greenstreem:autoPlayNext", "false");
+  els.nextEpisodeCountdown.textContent = "Auto next is off";
+  els.cancelNextEpisodeButton.textContent = "Auto Off";
+});
 
 async function showLatestDiagnostics(prefix) {
   if (!state.sessionId || !apiAvailable) return;
@@ -1184,6 +1415,7 @@ els.playItemButton.addEventListener("click", () => {
 els.fullscreenPlayer.addEventListener("mousemove", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("pointerdown", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("focusin", showFullscreenControls);
+els.playerOptionsButton.addEventListener("click", togglePlayerOptions);
 els.closeFullscreenPlayerButton.addEventListener("click", () => closeFullscreenPlayer());
 
 els.searchButton.addEventListener("click", () => {
@@ -1251,6 +1483,10 @@ els.fullscreenButton.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.playerOptionsPanel.classList.contains("is-hidden")) {
+    els.playerOptionsPanel.classList.add("is-hidden");
+    return;
+  }
   if (event.key === "Escape" && isFullscreenPlayerOpen()) {
     closeFullscreenPlayer();
   }

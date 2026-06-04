@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GreenStreem Web Player</title>
-    <link rel="stylesheet" href="styles.css?v=20260604-2248">
+    <link rel="stylesheet" href="styles.css?v=20260604-2322">
   </head>
   <body>
     <div class="app-shell">
@@ -239,14 +239,26 @@
             <strong id="fullscreenTitle">Now Playing</strong>
             <span id="fullscreenMeta">Movie</span>
           </div>
-          <button id="closeFullscreenPlayerButton" class="icon-button" type="button" title="Close">X</button>
+          <div class="fullscreen-actions">
+            <button id="playerOptionsButton" class="icon-button" type="button" title="Playback options">⚙</button>
+            <button id="closeFullscreenPlayerButton" class="icon-button" type="button" title="Close">X</button>
+          </div>
         </div>
+        <div id="playerOptionsPanel" class="player-options-panel is-hidden" aria-label="Playback options"></div>
         <div id="fullscreenStatus" class="fullscreen-status">Loading...</div>
+        <div id="nextEpisodePrompt" class="next-episode-prompt is-hidden">
+          <strong id="nextEpisodeTitle">Next episode</strong>
+          <span id="nextEpisodeCountdown">Auto plays soon</span>
+          <div class="next-episode-actions">
+            <button id="playNextEpisodeButton" type="button">Play Now</button>
+            <button id="cancelNextEpisodeButton" type="button">Cancel Auto</button>
+          </div>
+        </div>
       </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260604-2248"></script>
+    <script src="app.js?v=20260604-2322"></script>
   </body>
 </html>
