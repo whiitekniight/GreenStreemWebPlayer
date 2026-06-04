@@ -599,7 +599,9 @@ def load_xtream_library(session: Session, media_type: str, selected_category: st
 
     category_names = sorted(set(categories_by_id.values()))
     effective_category = ""
-    if selected_category and selected_category != "All" and selected_category in category_id_by_name:
+    if not selected_category and category_names:
+        effective_category = category_names[0]
+    elif selected_category and selected_category != "All" and selected_category in category_id_by_name:
         effective_category = selected_category
 
     extra = {}

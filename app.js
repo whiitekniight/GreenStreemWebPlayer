@@ -73,8 +73,8 @@ const state = {
   selectedLibraryItem: null,
   activeLibraryType: "",
   libraries: {
-    movies: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "All" },
-    series: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "All" },
+    movies: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "" },
+    series: { loaded: false, loading: false, categories: [], items: [], selectedCategory: "" },
   },
 };
 
