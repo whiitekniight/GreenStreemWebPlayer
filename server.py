@@ -598,9 +598,9 @@ def load_xtream_library(session: Session, media_type: str, selected_category: st
         }
 
     category_names = sorted(set(categories_by_id.values()))
-    effective_category = selected_category if selected_category in category_id_by_name else ""
-    if not effective_category and category_names:
-        effective_category = category_names[0]
+    effective_category = ""
+    if selected_category and selected_category != "All" and selected_category in category_id_by_name:
+        effective_category = selected_category
 
     extra = {}
     if effective_category:
@@ -636,7 +636,7 @@ def load_xtream_library(session: Session, media_type: str, selected_category: st
         )
 
     return {
-        "categories": ["All"] + sorted(set(categories_by_id.values())),
+        "categories": ["All"] + category_names,
         "selectedCategory": effective_category or "All",
         "items": items,
     }
