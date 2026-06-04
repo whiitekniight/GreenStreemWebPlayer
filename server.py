@@ -500,8 +500,17 @@ def has_xtream_credentials(session: Session) -> bool:
     )
 
 
-def xtream_api_url(base_url: str, username: str, password: str, action: str) -> str:
-    query = urlencode({"username": username, "password": password, "action": action})
+def xtream_api_url(
+    base_url: str,
+    username: str,
+    password: str,
+    action: str,
+    extra: dict[str, str] | None = None,
+) -> str:
+    params = {"username": username, "password": password, "action": action}
+    if extra:
+        params.update(extra)
+    query = urlencode(params)
     return f"{base_url}/player_api.php?{query}"
 
 
@@ -555,7 +564,7 @@ def load_xtream_channels(base_url: str, username: str, password: str, session_id
     return channels
 
 
-def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
+def load_xtream_library(session: Session, media_type: str, selected_category: str = "") -> dict[str, Any]:
     base_url = session.credentials.get("serverUrl", "")
     username = session.credentials.get("username", "")
     password = session.credentials.get("password", "")
@@ -574,6 +583,7 @@ def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
         raise ValueError("Unknown library type.")
 
     categories_by_id: dict[str, str] = {}
+    category_id_by_name: dict[str, str] = {}
     raw_categories = fetch_json(xtream_api_url(base_url, username, password, category_action))
     if isinstance(raw_categories, list):
         categories_by_id = {
@@ -581,8 +591,22 @@ def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
             for item in raw_categories
             if isinstance(item, dict)
         }
+        category_id_by_name = {
+            str(item.get("category_name") or "Uncategorized"): str(item.get("category_id"))
+            for item in raw_categories
+            if isinstance(item, dict)
+        }
 
-    raw_items = fetch_json(xtream_api_url(base_url, username, password, item_action))
+    category_names = sorted(set(categories_by_id.values()))
+    effective_category = selected_category if selected_category in category_id_by_name else ""
+    if not effective_category and category_names:
+        effective_category = category_names[0]
+
+    extra = {}
+    if effective_category:
+        extra["category_id"] = category_id_by_name[effective_category]
+
+    raw_items = fetch_json(xtream_api_url(base_url, username, password, item_action, extra))
     if not isinstance(raw_items, list):
         raise ValueError("Provider returned an unexpected library list.")
 
@@ -613,6 +637,7 @@ def load_xtream_library(session: Session, media_type: str) -> dict[str, Any]:
 
     return {
         "categories": ["All"] + sorted(set(categories_by_id.values())),
+        "selectedCategory": effective_category or "All",
         "items": items,
     }
 

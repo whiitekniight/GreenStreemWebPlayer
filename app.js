@@ -231,11 +231,11 @@ function showLibrary(type) {
 
   renderLibrary();
   if (!state.libraries[type].loaded && !state.libraries[type].loading) {
-    loadLibrary(type);
+    loadLibrary(type, state.libraries[type].selectedCategory);
   }
 }
 
-async function loadLibrary(type) {
+async function loadLibrary(type, category = "") {
   const library = state.libraries[type];
   if (!state.sessionId) {
     els.libraryStatus.textContent = "Log in with Xtream to load this library.";
@@ -247,14 +247,16 @@ async function loadLibrary(type) {
   renderLibrary();
 
   try {
-    const response = await fetch(`/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}`);
+    const response = await fetch(
+      `/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}&category=${encodeURIComponent(category || "")}`
+    );
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Library failed to load.");
 
     library.categories = result.categories || ["All"];
     library.items = result.items || [];
     library.loaded = true;
-    library.selectedCategory = "All";
+    library.selectedCategory = result.selectedCategory || category || "All";
     els.libraryStatus.textContent = `Loaded ${library.items.length} ${type === "movies" ? "movies" : "series"}.`;
   } catch (error) {
     els.libraryStatus.textContent = error.message || "Library failed to load.";
@@ -1040,7 +1042,8 @@ els.libraryCategorySelect.addEventListener("change", () => {
   const library = state.libraries[state.activeLibraryType];
   if (!library) return;
   library.selectedCategory = els.libraryCategorySelect.value;
-  renderLibrary();
+  library.loaded = false;
+  loadLibrary(state.activeLibraryType, library.selectedCategory);
 });
 els.closeItemModalButton.addEventListener("click", closeItemDetails);
 els.modalBackButton.addEventListener("click", closeItemDetails);
