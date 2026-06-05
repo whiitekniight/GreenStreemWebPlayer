@@ -162,6 +162,19 @@ const els = {
 
 const apiAvailable = window.location.protocol !== "file:";
 
+async function readApiJson(response, fallbackMessage) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(response.status === 404 ? "Session needs refreshed. Go back and sign in again." : fallbackMessage);
+  }
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || fallbackMessage);
+  }
+  return result;
+}
+
 function setStatus(message) {
   els.loginStatus.textContent = message;
 }
@@ -177,7 +190,7 @@ async function loadPublicConfig() {
 
   try {
     const response = await fetch("/api/config");
-    const config = await response.json();
+    const config = await readApiJson(response, "Could not load web player settings.");
     state.defaultServerConfigured = Boolean(config.defaultServerConfigured);
     els.modeTabsContainer.classList.toggle("is-hidden", state.defaultServerConfigured);
     els.serverUrlField.classList.toggle("is-hidden", state.defaultServerConfigured);
@@ -264,8 +277,7 @@ async function loadLibrary(type, category = "") {
     const response = await fetch(
       `/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}&category=${encodeURIComponent(category || "")}`
     );
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Library failed to load.");
+    const result = await readApiJson(response, "Library failed to load.");
 
     library.categories = result.categories || ["All"];
     library.items = result.items || [];
@@ -543,8 +555,7 @@ async function loadItemDetails(item) {
     const response = await fetch(
       `/api/item?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`,
     );
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Details failed to load.");
+    const result = await readApiJson(response, "Details failed to load.");
     const details = result.details || {};
     Object.assign(item, Object.fromEntries(Object.entries(details).filter(([, value]) => value)));
     if (state.selectedLibraryItem === item) {
@@ -593,7 +604,7 @@ async function buildStreamReport() {
 
   try {
     const response = await fetch(`/api/diagnostics?session=${encodeURIComponent(state.sessionId)}`);
-    const result = await response.json();
+    const result = await readApiJson(response, "Diagnostics unavailable.");
     const latestResponse = [...(result.events || [])].reverse().find((event) => event.event === "response" || event.status);
     if (latestResponse) {
       parts.push(
@@ -605,7 +616,7 @@ async function buildStreamReport() {
   }
 
   if (!video.paused && video.currentTime > 0 && !video.muted && video.volume > 0) {
-    parts.push("If video moves but there is no sound, suspect that channel feed or browser-incompatible audio codec.");
+    parts.push("No sound can mean this browser cannot decode that channel's audio format.");
   }
 
   els.streamReport.textContent = parts.join(" | ");
@@ -754,8 +765,22 @@ function renderPlayerOptions() {
     }),
   ];
 
+  const playbackButtons = [];
+  if (state.activeChannel && state.activeChannelIndex >= 0) {
+    playbackButtons.push(optionButton("Audio Fix", false, () => {
+      const playUrl = `/api/audio-fix?session=${encodeURIComponent(state.sessionId)}&channel=${encodeURIComponent(state.activeChannelIndex)}`;
+      state.triedFallback = true;
+      state.pendingTsPreference = false;
+      setPlaybackStatus("Trying audio fix...");
+      loadStream(playUrl, "file");
+      els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
+      renderPlayerOptions();
+    }));
+  }
+
   els.playerOptionsPanel.append(
     optionSection("Picture Size", fitButtons),
+    ...(playbackButtons.length ? [optionSection("Playback", playbackButtons)] : []),
     optionSection("Series", [
       optionButton("Auto Next On", state.autoPlayNext, () => {
         state.autoPlayNext = true;
@@ -1062,14 +1087,13 @@ function loadStream(playUrl, streamType) {
         data.type === Hls.ErrorTypes.MEDIA_ERROR ||
         /mse|decode|buffer/i.test(issue || "");
 
-      setPlaybackStatus(`Stream issue: ${issue}`);
       showLatestDiagnostics(issue);
       if (shouldTryFallback && tryFallbackStream(issue)) {
         return;
       }
       if (data.fatal) {
         if (tryFallbackStream(issue)) return;
-        setPlaybackStatus(`Playback failed: ${issue}`);
+        setPlaybackStatus("Playback failed.");
         state.hls.destroy();
         state.hls = null;
       }
@@ -1213,7 +1237,7 @@ async function showLatestDiagnostics(prefix) {
 
   try {
     const response = await fetch(`/api/diagnostics?session=${encodeURIComponent(state.sessionId)}`);
-    const result = await response.json();
+    const result = await readApiJson(response, "Diagnostics unavailable.");
     const latest = [...(result.events || [])].reverse().find((event) => event.status || event.reason || event.details);
     if (!latest) return;
 
@@ -1224,7 +1248,9 @@ async function showLatestDiagnostics(prefix) {
       latest.host ? `from ${latest.host}` : "",
       latest.type ? latest.type : "",
     ].filter(Boolean);
-    setPlaybackStatus(bits.join(" · "));
+    if (!els.streamReport.textContent) {
+      els.streamReport.textContent = bits.join(" · ");
+    }
   } catch {
     // Diagnostics are helpful but should never interrupt playback.
   }
@@ -1298,8 +1324,7 @@ async function refreshSessionData() {
 
   try {
     const response = await fetch(`/api/session?session=${encodeURIComponent(state.sessionId)}`);
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Session refresh failed.");
+    const result = await readApiJson(response, "Session refresh failed.");
 
     state.channels = result.channels.length ? result.channels : state.channels;
     state.account = result.account || state.account;
@@ -1366,10 +1391,7 @@ els.loginForm.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || "Login failed.");
-    }
+    const result = await readApiJson(response, "Login failed.");
     state.sessionId = result.sessionId;
     state.channels = result.channels.length ? result.channels : [...demoChannels];
     state.account = result.account || {};

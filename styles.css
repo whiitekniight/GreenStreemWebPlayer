@@ -86,6 +86,11 @@ button {
   gap: 10px;
 }
 
+.top-category-button {
+  min-width: 112px;
+  padding: 0 16px;
+}
+
 .main-nav {
   display: flex;
   justify-content: center;

@@ -14,6 +14,8 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -793,6 +795,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/stream":
             self.handle_stream(parsed.query)
             return
+        if parsed.path == "/api/audio-fix":
+            self.handle_audio_fix(parsed.query)
+            return
         if parsed.path == "/api/proxy":
             self.handle_proxy(parsed.query)
             return
@@ -902,6 +907,79 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             record_diagnostic(session_id, "stream-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def handle_audio_fix(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        channel_raw = params.get("channel", [""])[0]
+        session = get_session(session_id)
+
+        if not session:
+            self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
+            return
+
+        try:
+            channel = session.channels[int(channel_raw)]
+            stream_url = str(channel.get("fallbackUrl") or channel.get("url") or "")
+            if not stream_url:
+                raise ValueError("Channel has no stream URL.")
+            self.transcode_audio_url(stream_url, session_id=session_id, session=session)
+        except Exception as exc:
+            record_diagnostic(session_id, "audio-fix-error", details=str(exc))
+            self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def transcode_audio_url(self, url: str, *, session_id: str, session: Session | None) -> None:
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.send_error(HTTPStatus.NOT_IMPLEMENTED, "Audio Fix requires ffmpeg on the server.")
+            return
+
+        header_blob = "".join(f"{key}: {value}\r\n" for key, value in provider_headers(url).items())
+        command = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-headers",
+            header_blob,
+            "-i",
+            url,
+            "-map",
+            "0:v:0?",
+            "-map",
+            "0:a:0?",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-f",
+            "mp4",
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof",
+            "pipe:1",
+        ]
+
+        record_diagnostic(session_id, "audio-fix", url)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        assert process.stdout is not None
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if process.poll() is None:
+                process.terminate()
 
     def proxy_url(
         self,

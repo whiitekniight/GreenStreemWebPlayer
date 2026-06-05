@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GreenStreem Web Player</title>
-    <link rel="stylesheet" href="styles.css?v=20260604-2322">
+    <link rel="stylesheet" href="styles.css?v=20260605-0007">
   </head>
   <body>
     <div class="app-shell">
@@ -23,7 +23,7 @@
           <button type="button" data-section="account">Account</button>
         </nav>
         <nav class="top-actions" aria-label="Player actions">
-          <button id="openCategoriesButton" class="icon-button" type="button" title="Categories">☰</button>
+          <button id="openCategoriesButton" class="secondary-button top-category-button" type="button">Categories</button>
           <button id="searchButton" class="icon-button" type="button" title="Search">⌕</button>
           <button id="fullscreenButton" class="icon-button" type="button" title="Fullscreen">⛶</button>
         </nav>
@@ -34,13 +34,13 @@
           <form id="loginForm" class="login-panel">
             <p class="eyebrow">GreenStreem Web Player</p>
             <h1>Sign in with your GreenStreem account.</h1>
-            <div id="modeTabs" class="mode-tabs" role="tablist" aria-label="Login type">
+            <div id="modeTabs" class="mode-tabs is-hidden" role="tablist" aria-label="Login type">
               <button class="mode-tab is-active" type="button" data-mode="xtream">Xtream</button>
               <button class="mode-tab" type="button" data-mode="m3u">M3U</button>
             </div>
 
             <div id="xtreamFields" class="field-grid">
-              <label id="serverUrlField">
+              <label id="serverUrlField" class="is-hidden">
                 Server URL
                 <input id="serverUrlInput" autocomplete="url" placeholder="https://example.com">
               </label>
@@ -259,6 +259,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260604-2334"></script>
+    <script src="app.js?v=20260605-0007"></script>
   </body>
 </html>
