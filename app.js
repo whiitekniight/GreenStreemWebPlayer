@@ -105,6 +105,7 @@ const els = {
   streamReportButton: document.querySelector("#streamReportButton"),
   streamReport: document.querySelector("#streamReport"),
   videoPlayer: document.querySelector("#videoPlayer"),
+  videoFullscreenButton: document.querySelector("#videoFullscreenButton"),
   fullscreenPlayer: document.querySelector("#fullscreenPlayer"),
   fullscreenVideoPlayer: document.querySelector("#fullscreenVideoPlayer"),
   fullscreenTitle: document.querySelector("#fullscreenTitle"),
@@ -1144,6 +1145,9 @@ function loadStream(playUrl, streamType) {
       setPlaybackStatus("Video buffered. Starting playback...");
     });
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (state.hls.levels?.length > 1) {
+        state.hls.currentLevel = state.hls.levels.length - 1;
+      }
       setPlaybackStatus("HLS stream ready.");
       renderPlayerOptions();
       attemptPlay();
@@ -1531,16 +1535,11 @@ els.fullscreenButton.addEventListener("click", () => {
   }
 });
 
-els.videoPlayer.addEventListener("webkitbeginfullscreen", (event) => {
-  if (openLiveFullscreen()) {
-    event.preventDefault();
-  }
-});
+els.videoFullscreenButton.addEventListener("click", openLiveFullscreen);
 
-els.videoPlayer.addEventListener("fullscreenchange", () => {
-  if (document.fullscreenElement === els.videoPlayer && openLiveFullscreen()) {
-    document.exitFullscreen().catch(() => {});
-  }
+els.videoPlayer.addEventListener("webkitbeginfullscreen", (event) => {
+  event.preventDefault();
+  openLiveFullscreen();
 });
 
 document.addEventListener("keydown", (event) => {

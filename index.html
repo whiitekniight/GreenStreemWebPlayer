@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GreenStreem Web Player</title>
-    <link rel="stylesheet" href="styles.css?v=20260605-0058">
+    <link rel="stylesheet" href="styles.css?v=20260605-0133">
   </head>
   <body>
     <div class="app-shell">
@@ -85,7 +85,10 @@
               <span id="currentCategoryLabel">All Channels</span>
               <strong id="currentChannelTitle">Choose a channel</strong>
             </div>
-            <video id="videoPlayer" controls playsinline></video>
+            <div class="live-video-shell">
+              <video id="videoPlayer" controls controlsList="nofullscreen" playsinline></video>
+              <button id="videoFullscreenButton" class="video-fullscreen-button" type="button" title="Fullscreen">⛶</button>
+            </div>
             <div class="now-next">
               <p id="nowTitle">No program selected</p>
               <span id="nextTitle">Guide data will appear here when connected.</span>
@@ -260,6 +263,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260605-0112"></script>
+    <script src="app.js?v=20260605-0133"></script>
   </body>
 </html>

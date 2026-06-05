@@ -318,6 +318,10 @@ select {
   font-size: 22px;
 }
 
+.live-video-shell {
+  position: relative;
+}
+
 video {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -325,6 +329,31 @@ video {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #000;
+}
+
+.live-video-shell video {
+  display: block;
+}
+
+.video-fullscreen-button {
+  position: absolute;
+  right: 12px;
+  bottom: 42px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(8, 15, 18, 0.86);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.video-fullscreen-button:hover,
+.video-fullscreen-button:focus {
+  color: #07120d;
+  border-color: var(--green);
+  background: var(--green);
 }
 
 .now-next {
