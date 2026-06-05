@@ -955,9 +955,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             "-b:a",
             "160k",
             "-f",
-            "mp4",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
+            "mpegts",
             "pipe:1",
         ]
 
@@ -965,7 +963,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         assert process.stdout is not None
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Type", "video/mp2t")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

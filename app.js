@@ -715,7 +715,7 @@ function playAudioFix() {
   state.triedFallback = true;
   state.pendingTsPreference = false;
   setPlaybackStatus("Trying audio fix...");
-  loadStream(playUrl, "file");
+  loadStream(playUrl, "mpegts");
   els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
   renderPlayerOptions();
 }
@@ -1113,7 +1113,11 @@ function loadStream(playUrl, streamType) {
   const looksLikeHls = streamType === "hls" || /\.m3u8($|\?)/i.test(playUrl);
 
   if (looksLikeHls && window.Hls && window.Hls.isSupported()) {
-    state.hls = new Hls({ lowLatencyMode: true });
+    state.hls = new Hls({
+      lowLatencyMode: true,
+      capLevelToPlayerSize: false,
+      startLevel: -1,
+    });
     state.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
       setPlaybackStatus("Opening HLS stream...");
     });
@@ -1146,7 +1150,11 @@ function loadStream(playUrl, streamType) {
     });
     state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (state.hls.levels?.length > 1) {
-        state.hls.currentLevel = state.hls.levels.length - 1;
+        const highestLevel = state.hls.levels.length - 1;
+        state.hls.autoLevelCapping = highestLevel;
+        state.hls.startLevel = highestLevel;
+        state.hls.currentLevel = highestLevel;
+        state.hls.nextLevel = highestLevel;
       }
       setPlaybackStatus("HLS stream ready.");
       renderPlayerOptions();
