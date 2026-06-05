@@ -642,6 +642,7 @@ function openFullscreenPlayer(item) {
 
 function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   if (!isFullscreenPlayerOpen()) return;
+  const resumeLive = state.section === "live" && state.activeChannel && state.activeChannelIndex >= 0 && !state.activeSeriesItem;
   window.clearTimeout(state.fullscreenControlsTimer);
   state.fullscreenControlsTimer = null;
   hideNextEpisodePrompt();
@@ -658,6 +659,11 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
 
   if (exitFullscreen && document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
+  }
+
+  if (resumeLive) {
+    loadActiveChannelStream();
+    renderChannels({ preserveScroll: true });
   }
 }
 
@@ -695,6 +701,21 @@ function optionSection(title, buttons) {
   buttons.forEach((button) => row.appendChild(button));
   section.append(heading, row);
   return section;
+}
+
+function playAudioFix() {
+  if (!state.activeChannel || state.activeChannelIndex < 0) {
+    els.streamReport.textContent = "Choose a live channel first.";
+    return;
+  }
+
+  const playUrl = `/api/audio-fix?session=${encodeURIComponent(state.sessionId)}&channel=${encodeURIComponent(state.activeChannelIndex)}`;
+  state.triedFallback = true;
+  state.pendingTsPreference = false;
+  setPlaybackStatus("Trying audio fix...");
+  loadStream(playUrl, "file");
+  els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
+  renderPlayerOptions();
 }
 
 function audioTrackButtons() {
@@ -767,15 +788,7 @@ function renderPlayerOptions() {
 
   const playbackButtons = [];
   if (state.activeChannel && state.activeChannelIndex >= 0) {
-    playbackButtons.push(optionButton("Audio Fix", false, () => {
-      const playUrl = `/api/audio-fix?session=${encodeURIComponent(state.sessionId)}&channel=${encodeURIComponent(state.activeChannelIndex)}`;
-      state.triedFallback = true;
-      state.pendingTsPreference = false;
-      setPlaybackStatus("Trying audio fix...");
-      loadStream(playUrl, "file");
-      els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
-      renderPlayerOptions();
-    }));
+    playbackButtons.push(optionButton("Audio Fix", false, playAudioFix));
   }
 
   els.playerOptionsPanel.append(
@@ -1033,25 +1046,34 @@ function playChannel(index) {
   state.activeChannel = channel;
   state.triedFallback = false;
   state.pendingTsPreference = false;
-
-  if (hasStream) {
-    const shouldPreferTs =
-      state.preferredLiveStreamType === "mpegts" &&
-      channel.fallbackPlayUrl &&
-      channel.fallbackStreamType === "mpegts";
-
-    if (shouldPreferTs) {
-      els.nowTime.textContent = "Using learned TS playback path...";
-      state.triedFallback = true;
-      loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType);
-    } else {
-      loadStream(streamUrl, channel.streamType || channel.url || "");
-    }
-  } else {
-    clearPlayer();
-  }
+  loadActiveChannelStream();
 
   renderChannels({ preserveScroll: true });
+}
+
+function loadActiveChannelStream() {
+  const channel = state.activeChannel;
+  if (!channel) return;
+
+  const streamUrl = channel.playUrl || channel.url;
+  const hasStream = channel.hasStream || Boolean(streamUrl);
+  if (!hasStream) {
+    clearPlayer();
+    return;
+  }
+
+  const shouldPreferTs =
+    state.preferredLiveStreamType === "mpegts" &&
+    channel.fallbackPlayUrl &&
+    channel.fallbackStreamType === "mpegts";
+
+  if (shouldPreferTs) {
+    setPlaybackStatus("Using learned TS playback path...");
+    state.triedFallback = true;
+    loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType);
+  } else {
+    loadStream(streamUrl, channel.streamType || channel.url || "");
+  }
 }
 
 function clearPlayer() {
@@ -1499,6 +1521,17 @@ els.logoutButton.addEventListener("click", () => {
 });
 
 els.fullscreenButton.addEventListener("click", () => {
+  if (state.activeChannel && state.activeChannelIndex >= 0) {
+    openFullscreenPlayer({
+      playTitle: state.activeChannel.name,
+      category: state.activeChannel.category || "Live TV",
+    });
+    state.triedFallback = false;
+    state.pendingTsPreference = false;
+    loadActiveChannelStream();
+    return;
+  }
+
   if (els.videoPlayer.requestFullscreen) {
     els.videoPlayer.requestFullscreen();
   }

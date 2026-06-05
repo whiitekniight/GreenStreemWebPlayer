@@ -768,13 +768,14 @@ video {
   top: 0;
   left: 0;
   right: 0;
+  z-index: 3;
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding: 18px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.82), transparent);
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
   transition: opacity 160ms ease;
 }
 
@@ -783,9 +784,9 @@ video {
   gap: 10px;
 }
 
-.fullscreen-player.is-controls-visible .fullscreen-topbar {
-  opacity: 1;
-  pointer-events: auto;
+.fullscreen-options-button {
+  min-width: 96px;
+  padding: 0 14px;
 }
 
 .fullscreen-topbar strong,
@@ -812,7 +813,7 @@ video {
   position: absolute;
   top: 74px;
   right: 18px;
-  z-index: 2;
+  z-index: 4;
   width: min(360px, calc(100vw - 36px));
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
