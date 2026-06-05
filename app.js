@@ -62,6 +62,8 @@ const state = {
   activePlaybackType: "",
   audioFixActive: false,
   autoAudioFixTimer: null,
+  activeResumeKey: "",
+  nextPromptDismissedKey: "",
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
   pendingTsPreference: false,
@@ -121,6 +123,7 @@ const els = {
   playNextEpisodeButton: document.querySelector("#playNextEpisodeButton"),
   cancelNextEpisodeButton: document.querySelector("#cancelNextEpisodeButton"),
   playerOptionsButton: document.querySelector("#playerOptionsButton"),
+  minimizeFullscreenPlayerButton: document.querySelector("#minimizeFullscreenPlayerButton"),
   playerOptionsPanel: document.querySelector("#playerOptionsPanel"),
   closeFullscreenPlayerButton: document.querySelector("#closeFullscreenPlayerButton"),
   categoryDrawer: document.querySelector("#categoryDrawer"),
@@ -589,6 +592,7 @@ function isFullscreenPlayerOpen() {
 
 function setPlaybackStatus(message) {
   if (isFullscreenPlayerOpen()) {
+    els.fullscreenStatus.classList.toggle("is-hidden", message === "Playing.");
     els.fullscreenStatus.textContent = message;
   } else {
     els.nowTime.textContent = message;
@@ -640,8 +644,10 @@ function openFullscreenPlayer(item) {
   els.fullscreenTitle.textContent = item.playTitle || libraryDisplayTitle(item);
   els.fullscreenMeta.textContent = meta;
   els.fullscreenStatus.textContent = "Loading...";
+  els.fullscreenStatus.classList.remove("is-hidden");
   els.playerOptionsPanel.classList.add("is-hidden");
   applyVideoFit();
+  els.fullscreenPlayer.classList.remove("is-windowed");
   els.fullscreenPlayer.classList.remove("is-hidden");
   els.fullscreenPlayer.focus();
   showFullscreenControls();
@@ -650,6 +656,16 @@ function openFullscreenPlayer(item) {
   if (requestFullscreen) {
     requestFullscreen().catch(() => {});
   }
+}
+
+function minimizeFullscreenPlayer() {
+  if (!isFullscreenPlayerOpen()) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+  els.playerOptionsPanel.classList.add("is-hidden");
+  els.fullscreenPlayer.classList.add("is-windowed");
+  showFullscreenControls();
 }
 
 function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
@@ -665,10 +681,12 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   els.playerOptionsPanel.classList.add("is-hidden");
   clearPlayer();
   els.fullscreenPlayer.classList.add("is-hidden");
+  els.fullscreenPlayer.classList.remove("is-windowed");
   els.fullscreenPlayer.classList.remove("is-controls-visible");
   state.playbackVideo = els.videoPlayer;
   placePlayerOptionsPanel();
   els.fullscreenStatus.textContent = "Loading...";
+  els.fullscreenStatus.classList.remove("is-hidden");
 
   if (exitFullscreen && document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
@@ -881,6 +899,8 @@ function hideNextEpisodePrompt() {
 
 function showNextEpisodePrompt(force = false) {
   if (!state.activeSeriesItem || !state.nextEpisode) return;
+  const promptKey = String(state.activeEpisode?.id || "");
+  if (!force && (!state.autoPlayNext || state.nextPromptDismissedKey === promptKey)) return;
   if (!force && state.nextPromptShown) return;
 
   state.nextPromptShown = true;
@@ -898,8 +918,43 @@ function showNextEpisodePrompt(force = false) {
 
 function playNextSeriesEpisode() {
   if (!state.activeSeriesItem || !state.nextEpisode) return;
+  hideNextEpisodePrompt();
   state.activeSeriesItem.selectedEpisode = state.nextEpisode.episode;
   playLibraryItem(state.activeSeriesItem);
+}
+
+function resumeKeyFor(media, id) {
+  return `greenstreem:resume:${media}:${id}`;
+}
+
+function saveResumePosition(video) {
+  if (!state.activeResumeKey || !Number.isFinite(video.duration) || video.duration < 60) return;
+  const remaining = video.duration - video.currentTime;
+  if (video.currentTime > 15 && remaining > 20) {
+    localStorage.setItem(state.activeResumeKey, JSON.stringify({ time: video.currentTime, updatedAt: Date.now() }));
+  } else if (remaining <= 20) {
+    localStorage.removeItem(state.activeResumeKey);
+  }
+}
+
+function applyResumePosition(video) {
+  if (!state.activeResumeKey) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(state.activeResumeKey) || "null");
+    if (!saved || !Number.isFinite(saved.time) || saved.time < 15) return;
+    const seek = () => {
+      if (Number.isFinite(video.duration) && video.duration > saved.time + 20) {
+        video.currentTime = saved.time;
+      }
+    };
+    if (video.readyState >= 1) {
+      seek();
+    } else {
+      video.addEventListener("loadedmetadata", seek, { once: true });
+    }
+  } catch {
+    localStorage.removeItem(state.activeResumeKey);
+  }
 }
 
 function playLibraryItem(item) {
@@ -911,6 +966,7 @@ function playLibraryItem(item) {
   state.activeEpisode = null;
   state.nextEpisode = null;
   state.nextPromptShown = false;
+  state.nextPromptDismissedKey = "";
   hideNextEpisodePrompt();
 
   if (item.type === "series") {
@@ -938,6 +994,7 @@ function playLibraryItem(item) {
   state.activeChannel = null;
   state.activePlaybackUrl = playUrl;
   state.activePlaybackType = extension === "m3u8" ? "hls" : "file";
+  state.activeResumeKey = resumeKeyFor(media, id);
   state.audioFixActive = false;
   els.currentCategoryLabel.textContent = item.category || "Movies";
   els.currentChannelTitle.textContent = playTarget.playTitle || libraryDisplayTitle(item);
@@ -1126,6 +1183,7 @@ function loadActiveChannelStream() {
     state.activePlaybackUrl = channel.fallbackPlayUrl;
     state.activePlaybackType = channel.fallbackStreamType;
     state.audioFixActive = false;
+    state.activeResumeKey = "";
     setPlaybackStatus("Using learned TS playback path...");
     state.triedFallback = true;
     loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType);
@@ -1133,6 +1191,7 @@ function loadActiveChannelStream() {
     state.activePlaybackUrl = streamUrl;
     state.activePlaybackType = channel.streamType || channel.url || "";
     state.audioFixActive = false;
+    state.activeResumeKey = "";
     loadStream(streamUrl, channel.streamType || channel.url || "");
   }
 }
@@ -1150,6 +1209,7 @@ function openLiveFullscreen() {
 }
 
 function clearPlayer() {
+  saveResumePosition(activeVideo());
   window.clearTimeout(state.autoAudioFixTimer);
   state.autoAudioFixTimer = null;
   if (state.hls) {
@@ -1218,6 +1278,7 @@ function loadStream(playUrl, streamType) {
       }
       setPlaybackStatus("HLS stream ready.");
       renderPlayerOptions();
+      applyResumePosition(video);
       attemptPlay();
     });
     state.hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, renderPlayerOptions);
@@ -1229,6 +1290,7 @@ function loadStream(playUrl, streamType) {
   if (looksLikeHls && video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = playUrl;
     setPlaybackStatus("Native HLS stream ready.");
+    applyResumePosition(video);
     attemptPlay();
     return;
   }
@@ -1247,6 +1309,7 @@ function loadStream(playUrl, streamType) {
     state.mpegts.attachMediaElement(video);
     state.mpegts.load();
     setPlaybackStatus(fallbackTrial ? "Trying direct TS stream fallback..." : "Opening TS stream...");
+    applyResumePosition(video);
     attemptPlay();
     return;
   }
@@ -1255,6 +1318,7 @@ function loadStream(playUrl, streamType) {
   setPlaybackStatus(looksLikeHls
     ? "HLS helper did not load. Refresh the page and try again."
     : "Trying direct stream playback. Some .ts streams need conversion.");
+  applyResumePosition(video);
   attemptPlay();
   renderPlayerOptions();
 }
@@ -1300,7 +1364,9 @@ function attachVideoEvents(video) {
   });
 
   video.addEventListener("timeupdate", () => {
-    if (video !== activeVideo() || !state.activeSeriesItem || !state.nextEpisode || !Number.isFinite(video.duration)) return;
+    if (video !== activeVideo()) return;
+    saveResumePosition(video);
+    if (!state.activeSeriesItem || !state.nextEpisode || !Number.isFinite(video.duration) || video.duration < 300) return;
     const remaining = video.duration - video.currentTime;
     if (remaining > 0 && remaining <= 45) {
       showNextEpisodePrompt();
@@ -1337,8 +1403,8 @@ els.playNextEpisodeButton.addEventListener("click", playNextSeriesEpisode);
 els.cancelNextEpisodeButton.addEventListener("click", () => {
   state.autoPlayNext = false;
   localStorage.setItem("greenstreem:autoPlayNext", "false");
-  els.nextEpisodeCountdown.textContent = "Auto next is off";
-  els.cancelNextEpisodeButton.textContent = "Auto Off";
+  state.nextPromptDismissedKey = String(state.activeEpisode?.id || "");
+  hideNextEpisodePrompt();
 });
 
 async function showLatestDiagnostics(prefix) {
@@ -1538,6 +1604,7 @@ els.fullscreenPlayer.addEventListener("pointerdown", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("focusin", showFullscreenControls);
 els.playerOptionsButton.addEventListener("click", togglePlayerOptions);
 els.liveOptionsButton.addEventListener("click", togglePlayerOptions);
+els.minimizeFullscreenPlayerButton.addEventListener("click", minimizeFullscreenPlayer);
 els.closeFullscreenPlayerButton.addEventListener("click", () => closeFullscreenPlayer());
 
 els.searchButton.addEventListener("click", () => {
@@ -1622,8 +1689,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("fullscreenchange", () => {
-  if (!document.fullscreenElement && isFullscreenPlayerOpen()) {
-    closeFullscreenPlayer({ exitFullscreen: false });
+  if (!document.fullscreenElement && isFullscreenPlayerOpen() && !els.fullscreenPlayer.classList.contains("is-windowed")) {
+    showFullscreenControls();
   }
 });
 
