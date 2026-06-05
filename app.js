@@ -657,6 +657,7 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   els.fullscreenPlayer.classList.add("is-hidden");
   els.fullscreenPlayer.classList.remove("is-controls-visible");
   state.playbackVideo = els.videoPlayer;
+  placePlayerOptionsPanel();
   els.fullscreenStatus.textContent = "Loading...";
 
   if (exitFullscreen && document.fullscreenElement) {
@@ -715,7 +716,7 @@ function playAudioFix() {
   state.triedFallback = true;
   state.pendingTsPreference = false;
   setPlaybackStatus("Trying audio fix...");
-  loadStream(playUrl, "mpegts");
+  loadStream(playUrl, "file");
   els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
   renderPlayerOptions();
 }
@@ -821,10 +822,19 @@ function renderPlayerOptions() {
   );
 }
 
+function placePlayerOptionsPanel() {
+  const host = isFullscreenPlayerOpen() ? els.fullscreenPlayer : document.querySelector(".app-shell");
+  if (host && els.playerOptionsPanel.parentElement !== host) {
+    host.appendChild(els.playerOptionsPanel);
+  }
+}
+
 function togglePlayerOptions() {
+  const isHidden = els.playerOptionsPanel.classList.contains("is-hidden");
   renderPlayerOptions();
+  placePlayerOptionsPanel();
   els.playerOptionsPanel.classList.toggle("is-fullscreen-panel", isFullscreenPlayerOpen());
-  els.playerOptionsPanel.classList.toggle("is-hidden");
+  els.playerOptionsPanel.classList.toggle("is-hidden", !isHidden);
   showFullscreenControls();
 }
 
