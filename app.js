@@ -53,6 +53,8 @@ const state = {
   activeChannelIndex: -1,
   favoritesOnly: false,
   favorites: new Set(JSON.parse(localStorage.getItem("greenstreem:favorites") || "[]")),
+  myList: new Set(JSON.parse(localStorage.getItem("greenstreem:myList") || "[]")),
+  myListItems: JSON.parse(localStorage.getItem("greenstreem:myListItems") || "{}"),
   hls: null,
   mpegts: null,
   playbackVideo: null,
@@ -165,6 +167,7 @@ const els = {
   modalPlot: document.querySelector("#modalPlot"),
   seriesEpisodes: document.querySelector("#seriesEpisodes"),
   playItemButton: document.querySelector("#playItemButton"),
+  myListButton: document.querySelector("#myListButton"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderCopy: document.querySelector("#placeholderCopy"),
 };
@@ -273,6 +276,7 @@ function showLibrary(type) {
 
 async function loadLibrary(type, category = "") {
   const library = state.libraries[type];
+  const requestCategory = category === "My List" ? "" : category;
   if (!state.sessionId) {
     els.libraryStatus.textContent = "Log in with Xtream to load this library.";
     return;
@@ -284,14 +288,14 @@ async function loadLibrary(type, category = "") {
 
   try {
     const response = await fetch(
-      `/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}&category=${encodeURIComponent(category || "")}`
+      `/api/library?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(type)}&category=${encodeURIComponent(requestCategory || "")}`
     );
     const result = await readApiJson(response, "Library failed to load.");
 
     library.categories = result.categories || ["All"];
     library.items = result.items || [];
     library.loaded = true;
-    library.selectedCategory = result.selectedCategory || category || "All";
+    library.selectedCategory = category === "My List" ? "My List" : result.selectedCategory || category || "All";
     els.libraryStatus.textContent = `Loaded ${library.items.length} ${type === "movies" ? "movies" : "series"}.`;
   } catch (error) {
     els.libraryStatus.textContent = error.message || "Library failed to load.";
@@ -304,8 +308,15 @@ async function loadLibrary(type, category = "") {
 function filteredLibraryItems() {
   const library = state.libraries[state.activeLibraryType] || { items: [] };
   const search = els.librarySearchInput.value.trim().toLowerCase();
-  return library.items.filter((item) => {
-    const categoryMatch = library.selectedCategory === "All" || item.category === library.selectedCategory;
+  const items =
+    library.selectedCategory === "My List"
+      ? Object.values(state.myListItems).filter((item) => libraryTypeForItem(item) === state.activeLibraryType && state.myList.has(myListKey(item)))
+      : library.items;
+  return items.filter((item) => {
+    const categoryMatch =
+      library.selectedCategory === "All" ||
+      library.selectedCategory === "My List" ||
+      item.category === library.selectedCategory;
     const searchMatch =
       !search ||
       item.title.toLowerCase().includes(search) ||
@@ -321,7 +332,11 @@ function renderLibrary() {
   if (!library) return;
 
   els.libraryCategorySelect.innerHTML = "";
-  (library.categories.length ? library.categories : ["All"]).forEach((category) => {
+  const categories = library.categories.length ? library.categories : ["All"];
+  const categoryOptions = categories.includes("My List")
+    ? categories
+    : ["All", "My List", ...categories.filter((category) => category !== "All")];
+  categoryOptions.forEach((category) => {
     const option = document.createElement("option");
     option.value = category;
     option.textContent = category;
@@ -363,6 +378,32 @@ function libraryDisplayTitle(item) {
     title = `${title} (${year})`;
   }
   return title || item.title;
+}
+
+function libraryTypeForItem(item) {
+  return item.myListType || (item.type === "series" ? "series" : "movies");
+}
+
+function myListKey(item) {
+  return `${libraryTypeForItem(item)}:${item.id}`;
+}
+
+function persistMyList() {
+  localStorage.setItem("greenstreem:myList", JSON.stringify([...state.myList]));
+  localStorage.setItem("greenstreem:myListItems", JSON.stringify(state.myListItems));
+}
+
+function updateMyListButton(item) {
+  const saved = state.myList.has(myListKey(item));
+  els.myListButton.textContent = saved ? "Remove from My List" : "Add to My List";
+}
+
+function resumeKeyForItem(item) {
+  if (item.type === "series") {
+    const episode = item.selectedEpisode || firstSeriesEpisode(item);
+    return episode?.id ? resumeKeyFor("series", episode.id) : "";
+  }
+  return item.id ? resumeKeyFor("movies", item.id) : "";
 }
 
 function firstSeriesEpisode(item) {
@@ -479,17 +520,20 @@ function renderItemDetails(item) {
   els.modalTitle.textContent = libraryDisplayTitle(item);
   els.modalMeta.textContent = [item.genre || item.category, item.duration].filter(Boolean).join(" · ");
   els.modalPlot.textContent = item.plot || "Loading description...";
+  updateMyListButton(item);
 
   if (item.type === "series") {
     renderSeriesEpisodes(item);
     const firstEpisode = firstSeriesEpisode(item);
     els.playItemButton.disabled = !firstEpisode;
-    els.playItemButton.textContent = firstEpisode ? "Play First Episode" : "Loading Episodes...";
+    els.playItemButton.textContent = firstEpisode
+      ? getResumePosition(resumeKeyForItem(item)) ? "Resume Episode" : "Play First Episode"
+      : "Loading Episodes...";
   } else {
     els.seriesEpisodes.replaceChildren();
     els.seriesEpisodes.classList.add("is-hidden");
     els.playItemButton.disabled = false;
-    els.playItemButton.textContent = "Play";
+    els.playItemButton.textContent = getResumePosition(resumeKeyForItem(item)) ? "Resume" : "Play";
   }
 }
 
@@ -927,24 +971,35 @@ function resumeKeyFor(media, id) {
   return `greenstreem:resume:${media}:${id}`;
 }
 
+function getResumePosition(key) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    return saved && Number.isFinite(saved.time) && saved.time >= 5 ? saved.time : 0;
+  } catch {
+    localStorage.removeItem(key);
+    return 0;
+  }
+}
+
 function saveResumePosition(video) {
-  if (!state.activeResumeKey || !Number.isFinite(video.duration) || video.duration < 60) return;
-  const remaining = video.duration - video.currentTime;
-  if (video.currentTime > 15 && remaining > 20) {
-    localStorage.setItem(state.activeResumeKey, JSON.stringify({ time: video.currentTime, updatedAt: Date.now() }));
-  } else if (remaining <= 20) {
+  if (!state.activeResumeKey || !Number.isFinite(video.currentTime) || video.currentTime < 5) return;
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  const remaining = duration > 60 ? duration - video.currentTime : Number.POSITIVE_INFINITY;
+  if (duration > 60 && remaining <= 20) {
     localStorage.removeItem(state.activeResumeKey);
+  } else {
+    localStorage.setItem(state.activeResumeKey, JSON.stringify({ time: video.currentTime, updatedAt: Date.now() }));
   }
 }
 
 function applyResumePosition(video) {
   if (!state.activeResumeKey) return;
+  const resumeTime = getResumePosition(state.activeResumeKey);
+  if (!resumeTime) return;
   try {
-    const saved = JSON.parse(localStorage.getItem(state.activeResumeKey) || "null");
-    if (!saved || !Number.isFinite(saved.time) || saved.time < 15) return;
     const seek = () => {
-      if (Number.isFinite(video.duration) && video.duration > saved.time + 20) {
-        video.currentTime = saved.time;
+      if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > resumeTime + 5) {
+        video.currentTime = resumeTime;
       }
     };
     if (video.readyState >= 1) {
@@ -1373,7 +1428,12 @@ function attachVideoEvents(video) {
     }
   });
 
+  video.addEventListener("pause", () => {
+    if (video === activeVideo()) saveResumePosition(video);
+  });
+
   video.addEventListener("ended", () => {
+    if (state.activeResumeKey) localStorage.removeItem(state.activeResumeKey);
     if (video !== activeVideo() || !state.activeSeriesItem || !state.nextEpisode) return;
     if (state.autoPlayNext) {
       playNextSeriesEpisode();
@@ -1589,6 +1649,10 @@ els.libraryCategorySelect.addEventListener("change", () => {
   const library = state.libraries[state.activeLibraryType];
   if (!library) return;
   library.selectedCategory = els.libraryCategorySelect.value;
+  if (library.selectedCategory === "My List") {
+    renderLibrary();
+    return;
+  }
   library.loaded = false;
   loadLibrary(state.activeLibraryType, library.selectedCategory);
 });
@@ -1598,6 +1662,21 @@ els.playItemButton.addEventListener("click", () => {
   if (state.selectedLibraryItem) {
     playLibraryItem(state.selectedLibraryItem);
   }
+});
+els.myListButton.addEventListener("click", () => {
+  const item = state.selectedLibraryItem;
+  if (!item) return;
+  const key = myListKey(item);
+  if (state.myList.has(key)) {
+    state.myList.delete(key);
+    delete state.myListItems[key];
+  } else {
+    state.myList.add(key);
+    state.myListItems[key] = { ...item, myListType: libraryTypeForItem(item) };
+  }
+  persistMyList();
+  updateMyListButton(item);
+  renderLibrary();
 });
 els.fullscreenPlayer.addEventListener("mousemove", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("pointerdown", showFullscreenControls);
@@ -1692,6 +1771,10 @@ document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && isFullscreenPlayerOpen() && !els.fullscreenPlayer.classList.contains("is-windowed")) {
     showFullscreenControls();
   }
+});
+
+window.addEventListener("beforeunload", () => {
+  saveResumePosition(activeVideo());
 });
 
 showSection("login");
