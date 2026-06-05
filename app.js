@@ -101,6 +101,7 @@ const els = {
   nowTitle: document.querySelector("#nowTitle"),
   nextTitle: document.querySelector("#nextTitle"),
   nowTime: document.querySelector("#nowTime"),
+  liveOptionsButton: document.querySelector("#liveOptionsButton"),
   streamReportButton: document.querySelector("#streamReportButton"),
   streamReport: document.querySelector("#streamReport"),
   videoPlayer: document.querySelector("#videoPlayer"),
@@ -821,6 +822,7 @@ function renderPlayerOptions() {
 
 function togglePlayerOptions() {
   renderPlayerOptions();
+  els.playerOptionsPanel.classList.toggle("is-fullscreen-panel", isFullscreenPlayerOpen());
   els.playerOptionsPanel.classList.toggle("is-hidden");
   showFullscreenControls();
 }
@@ -1460,6 +1462,7 @@ els.fullscreenPlayer.addEventListener("mousemove", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("pointerdown", showFullscreenControls);
 els.fullscreenPlayer.addEventListener("focusin", showFullscreenControls);
 els.playerOptionsButton.addEventListener("click", togglePlayerOptions);
+els.liveOptionsButton.addEventListener("click", togglePlayerOptions);
 els.closeFullscreenPlayerButton.addEventListener("click", () => closeFullscreenPlayer());
 
 els.searchButton.addEventListener("click", () => {

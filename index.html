@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GreenStreem Web Player</title>
-    <link rel="stylesheet" href="styles.css?v=20260605-0045">
+    <link rel="stylesheet" href="styles.css?v=20260605-0058">
   </head>
   <body>
     <div class="app-shell">
@@ -90,6 +90,7 @@
               <p id="nowTitle">No program selected</p>
               <span id="nextTitle">Guide data will appear here when connected.</span>
               <span id="nowTime" class="playback-status">Idle.</span>
+              <button id="liveOptionsButton" class="secondary-button stream-report-button" type="button">Options</button>
               <button id="streamReportButton" class="secondary-button stream-report-button" type="button">Stream Report</button>
               <span id="streamReport" class="stream-report"></span>
             </div>
@@ -244,7 +245,6 @@
             <button id="closeFullscreenPlayerButton" class="icon-button" type="button" title="Close">X</button>
           </div>
         </div>
-        <div id="playerOptionsPanel" class="player-options-panel is-hidden" aria-label="Playback options"></div>
         <div id="fullscreenStatus" class="fullscreen-status">Loading...</div>
         <div id="nextEpisodePrompt" class="next-episode-prompt is-hidden">
           <strong id="nextEpisodeTitle">Next episode</strong>
@@ -255,10 +255,11 @@
           </div>
         </div>
       </div>
+      <div id="playerOptionsPanel" class="player-options-panel is-hidden" aria-label="Playback options"></div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260605-0045"></script>
+    <script src="app.js?v=20260605-0058"></script>
   </body>
 </html>
