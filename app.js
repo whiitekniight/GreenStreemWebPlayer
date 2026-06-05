@@ -1078,6 +1078,18 @@ function loadActiveChannelStream() {
   }
 }
 
+function openLiveFullscreen() {
+  if (!state.activeChannel || state.activeChannelIndex < 0) return false;
+  openFullscreenPlayer({
+    playTitle: state.activeChannel.name,
+    category: state.activeChannel.category || "Live TV",
+  });
+  state.triedFallback = false;
+  state.pendingTsPreference = false;
+  loadActiveChannelStream();
+  return true;
+}
+
 function clearPlayer() {
   if (state.hls) {
     state.hls.destroy();
@@ -1514,19 +1526,20 @@ els.logoutButton.addEventListener("click", () => {
 });
 
 els.fullscreenButton.addEventListener("click", () => {
-  if (state.activeChannel && state.activeChannelIndex >= 0) {
-    openFullscreenPlayer({
-      playTitle: state.activeChannel.name,
-      category: state.activeChannel.category || "Live TV",
-    });
-    state.triedFallback = false;
-    state.pendingTsPreference = false;
-    loadActiveChannelStream();
-    return;
-  }
-
-  if (els.videoPlayer.requestFullscreen) {
+  if (!openLiveFullscreen() && els.videoPlayer.requestFullscreen) {
     els.videoPlayer.requestFullscreen();
+  }
+});
+
+els.videoPlayer.addEventListener("webkitbeginfullscreen", (event) => {
+  if (openLiveFullscreen()) {
+    event.preventDefault();
+  }
+});
+
+els.videoPlayer.addEventListener("fullscreenchange", () => {
+  if (document.fullscreenElement === els.videoPlayer && openLiveFullscreen()) {
+    document.exitFullscreen().catch(() => {});
   }
 });
 
