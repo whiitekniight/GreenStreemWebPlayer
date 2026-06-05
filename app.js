@@ -1264,17 +1264,7 @@ async function showLatestDiagnostics(prefix) {
     const result = await readApiJson(response, "Diagnostics unavailable.");
     const latest = [...(result.events || [])].reverse().find((event) => event.status || event.reason || event.details);
     if (!latest) return;
-
-    const bits = [
-      prefix,
-      latest.status ? `HTTP ${latest.status}` : "",
-      latest.reason || latest.details || "",
-      latest.host ? `from ${latest.host}` : "",
-      latest.type ? latest.type : "",
-    ].filter(Boolean);
-    if (!els.streamReport.textContent) {
-      els.streamReport.textContent = bits.join(" · ");
-    }
+    // Keep provider diagnostics available through Stream Report without showing raw errors in the normal player UI.
   } catch {
     // Diagnostics are helpful but should never interrupt playback.
   }
