@@ -58,6 +58,10 @@ const state = {
   playbackVideo: null,
   fullscreenControlsTimer: null,
   activeChannel: null,
+  activePlaybackUrl: "",
+  activePlaybackType: "",
+  audioFixActive: false,
+  autoAudioFixTimer: null,
   triedFallback: false,
   preferredLiveStreamType: localStorage.getItem("greenstreem:preferredLiveStreamType") || "auto",
   pendingTsPreference: false,
@@ -591,6 +595,12 @@ function setPlaybackStatus(message) {
   }
 }
 
+function playbackContextLabel() {
+  if (state.activeSeriesItem) return "series episode";
+  if (state.section === "movies") return "movie";
+  return "channel";
+}
+
 async function buildStreamReport() {
   if (!state.activeChannel) {
     els.streamReport.textContent = "Choose a channel first.";
@@ -707,18 +717,45 @@ function optionSection(title, buttons) {
 }
 
 function playAudioFix() {
-  if (!state.activeChannel || state.activeChannelIndex < 0) {
-    els.streamReport.textContent = "Choose a live channel first.";
+  if (!state.activePlaybackUrl) {
+    els.streamReport.textContent = "Start a stream first.";
     return;
   }
 
-  const playUrl = `/api/audio-fix?session=${encodeURIComponent(state.sessionId)}&channel=${encodeURIComponent(state.activeChannelIndex)}`;
+  const playUrl = `/api/audio-fix?session=${encodeURIComponent(state.sessionId)}&url=${encodeURIComponent(state.activePlaybackUrl)}`;
+  state.audioFixActive = true;
   state.triedFallback = true;
   state.pendingTsPreference = false;
   setPlaybackStatus("Trying audio fix...");
   loadStream(playUrl, "file");
-  els.streamReport.textContent = "Audio Fix is converting this channel audio for the browser.";
+  els.streamReport.textContent = `Audio Fix is converting this ${playbackContextLabel()} audio for the browser.`;
   renderPlayerOptions();
+}
+
+function hasDecodedAudio(video) {
+  if (video.audioTracks && video.audioTracks.length > 0) return true;
+  if (typeof video.mozHasAudio === "boolean") return video.mozHasAudio;
+  if (typeof video.webkitAudioDecodedByteCount === "number") return video.webkitAudioDecodedByteCount > 0;
+  return true;
+}
+
+function scheduleAutoAudioFix(video) {
+  window.clearTimeout(state.autoAudioFixTimer);
+  if (!state.activePlaybackUrl || state.audioFixActive) return;
+  const playbackUrl = state.activePlaybackUrl;
+  state.autoAudioFixTimer = window.setTimeout(() => {
+    if (
+      video === activeVideo() &&
+      state.activePlaybackUrl === playbackUrl &&
+      !state.audioFixActive &&
+      !video.paused &&
+      video.currentTime > 1 &&
+      !hasDecodedAudio(video)
+    ) {
+      setPlaybackStatus("No browser audio detected. Trying Audio Fix...");
+      playAudioFix();
+    }
+  }, 4500);
 }
 
 function audioTrackButtons() {
@@ -763,7 +800,7 @@ function captionButtons() {
       renderPlayerOptions();
     }));
   });
-  return buttons;
+  return buttons.length > 1 ? buttons : [optionButton("No Captions Found", true, () => {})];
 }
 
 function renderPlayerOptions() {
@@ -790,7 +827,7 @@ function renderPlayerOptions() {
   ];
 
   const playbackButtons = [];
-  if (state.activeChannel && state.activeChannelIndex >= 0) {
+  if (state.activePlaybackUrl) {
     playbackButtons.push(optionButton("Audio Fix", false, playAudioFix));
   }
 
@@ -899,6 +936,9 @@ function playLibraryItem(item) {
   const playUrl = `/api/vod?session=${encodeURIComponent(state.sessionId)}&media=${encodeURIComponent(media)}&id=${encodeURIComponent(id)}&ext=${encodeURIComponent(extension)}`;
   state.activeChannelIndex = -1;
   state.activeChannel = null;
+  state.activePlaybackUrl = playUrl;
+  state.activePlaybackType = extension === "m3u8" ? "hls" : "file";
+  state.audioFixActive = false;
   els.currentCategoryLabel.textContent = item.category || "Movies";
   els.currentChannelTitle.textContent = playTarget.playTitle || libraryDisplayTitle(item);
   els.nowTitle.textContent = playTarget.playTitle || libraryDisplayTitle(item);
@@ -1057,6 +1097,8 @@ function playChannel(index) {
   const hasStream = channel.hasStream || Boolean(streamUrl);
   els.nowTime.textContent = hasStream ? "Loading stream..." : "Demo channel has no live stream URL yet.";
   state.activeChannel = channel;
+  state.activePlaybackUrl = "";
+  state.activePlaybackType = "";
   state.triedFallback = false;
   state.pendingTsPreference = false;
   loadActiveChannelStream();
@@ -1081,10 +1123,16 @@ function loadActiveChannelStream() {
     channel.fallbackStreamType === "mpegts";
 
   if (shouldPreferTs) {
+    state.activePlaybackUrl = channel.fallbackPlayUrl;
+    state.activePlaybackType = channel.fallbackStreamType;
+    state.audioFixActive = false;
     setPlaybackStatus("Using learned TS playback path...");
     state.triedFallback = true;
     loadStream(channel.fallbackPlayUrl, channel.fallbackStreamType);
   } else {
+    state.activePlaybackUrl = streamUrl;
+    state.activePlaybackType = channel.streamType || channel.url || "";
+    state.audioFixActive = false;
     loadStream(streamUrl, channel.streamType || channel.url || "");
   }
 }
@@ -1102,6 +1150,8 @@ function openLiveFullscreen() {
 }
 
 function clearPlayer() {
+  window.clearTimeout(state.autoAudioFixTimer);
+  state.autoAudioFixTimer = null;
   if (state.hls) {
     state.hls.destroy();
     state.hls = null;
@@ -1238,6 +1288,7 @@ function attachVideoEvents(video) {
       state.pendingTsPreference = false;
     }
     setPlaybackStatus("Playing.");
+    scheduleAutoAudioFix(video);
   });
 
   video.addEventListener("waiting", () => {

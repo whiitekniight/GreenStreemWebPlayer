@@ -912,6 +912,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         params = parse_qs(query)
         session_id = params.get("session", [""])[0]
         channel_raw = params.get("channel", [""])[0]
+        source_url = params.get("url", [""])[0]
         session = get_session(session_id)
 
         if not session:
@@ -919,14 +920,44 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            channel = session.channels[int(channel_raw)]
-            stream_url = str(channel.get("fallbackUrl") or channel.get("url") or "")
+            if source_url:
+                stream_url = self.resolve_audio_fix_url(source_url, session_id, session)
+            else:
+                channel = session.channels[int(channel_raw)]
+                stream_url = str(channel.get("fallbackUrl") or channel.get("url") or "")
             if not stream_url:
                 raise ValueError("Channel has no stream URL.")
             self.transcode_audio_url(stream_url, session_id=session_id, session=session)
         except Exception as exc:
             record_diagnostic(session_id, "audio-fix-error", details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def resolve_audio_fix_url(self, source_url: str, session_id: str, session: Session) -> str:
+        parsed = urlparse(source_url)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return source_url
+
+        params = parse_qs(parsed.query)
+        if parsed.path == "/api/stream":
+            channel_raw = params.get("channel", [""])[0]
+            prefer_ts = params.get("format", [""])[0] == "ts"
+            channel = session.channels[int(channel_raw)]
+            return str((channel.get("fallbackUrl") if prefer_ts else None) or channel.get("url") or channel.get("fallbackUrl") or "")
+
+        if parsed.path == "/api/vod":
+            media_type = params.get("media", ["movies"])[0]
+            item_id = params.get("id", [""])[0]
+            extension = params.get("ext", ["mp4"])[0] or "mp4"
+            base_url = session.credentials.get("serverUrl", "")
+            username = session.credentials.get("username", "")
+            password = session.credentials.get("password", "")
+            if not base_url or not username or not password or not item_id:
+                raise ValueError("Missing VOD details.")
+            safe_ext = re.sub(r"[^A-Za-z0-9]", "", extension) or "mp4"
+            stream_path = "series" if media_type == "series" else "movie"
+            return f"{base_url}/{stream_path}/{quote(username)}/{quote(password)}/{quote(item_id)}.{safe_ext}"
+
+        raise ValueError("Audio Fix cannot resolve this stream.")
 
     def transcode_audio_url(self, url: str, *, session_id: str, session: Session | None) -> None:
         ffmpeg = shutil.which("ffmpeg")
