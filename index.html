@@ -86,7 +86,7 @@
               <strong id="currentChannelTitle">Choose a channel</strong>
             </div>
             <div class="live-video-shell">
-              <video id="videoPlayer" controls controlsList="nofullscreen" playsinline></video>
+              <video id="videoPlayer" controls controlsList="nofullscreen" playsinline disablepictureinpicture></video>
               <button id="videoFullscreenButton" class="video-fullscreen-button" type="button" title="Fullscreen">⛶</button>
             </div>
             <div class="now-next">
@@ -238,7 +238,7 @@
         </div>
       </div>
       <div id="fullscreenPlayer" class="fullscreen-player is-hidden" tabindex="-1">
-        <video id="fullscreenVideoPlayer" controls autoplay playsinline></video>
+        <video id="fullscreenVideoPlayer" controls autoplay playsinline disablepictureinpicture></video>
         <div class="fullscreen-topbar">
           <div>
             <strong id="fullscreenTitle">Now Playing</strong>
@@ -265,6 +265,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1"></script>
-    <script src="app.js?v=20260605-1234"></script>
+    <script src="app.js?v=20260607-1145"></script>
   </body>
 </html>

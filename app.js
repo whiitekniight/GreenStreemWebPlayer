@@ -704,6 +704,10 @@ function openFullscreenPlayer(item) {
 
 function minimizeFullscreenPlayer() {
   if (!isFullscreenPlayerOpen()) return;
+  if (state.section === "live" && state.activeChannel && state.activeChannelIndex >= 0 && !state.activeSeriesItem) {
+    closeFullscreenPlayer();
+    return;
+  }
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
@@ -749,7 +753,7 @@ function showFullscreenControls() {
   state.fullscreenControlsTimer = window.setTimeout(() => {
     if (!els.playerOptionsPanel.classList.contains("is-hidden")) return;
     els.fullscreenPlayer.classList.remove("is-controls-visible");
-  }, 1800);
+  }, 1200);
 }
 
 function applyVideoFit() {
