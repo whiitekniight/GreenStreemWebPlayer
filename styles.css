@@ -813,9 +813,14 @@ video {
   gap: 18px;
   padding: 18px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.82), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.fullscreen-player.is-controls-visible .fullscreen-topbar {
   opacity: 1;
   pointer-events: auto;
-  transition: opacity 160ms ease;
 }
 
 .fullscreen-actions {

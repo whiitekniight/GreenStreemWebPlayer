@@ -59,6 +59,8 @@ const state = {
   mpegts: null,
   playbackVideo: null,
   fullscreenControlsTimer: null,
+  fullscreenMode: "",
+  liveVideoPlaceholder: null,
   activeChannel: null,
   activePlaybackUrl: "",
   activePlaybackType: "",
@@ -683,8 +685,10 @@ async function buildStreamReport() {
 }
 
 function openFullscreenPlayer(item) {
+  state.fullscreenMode = "library";
   const meta = [item.year, item.category].filter(Boolean).join(" · ") || "Library";
   state.playbackVideo = els.fullscreenVideoPlayer;
+  els.fullscreenVideoPlayer.classList.remove("is-hidden");
   els.fullscreenTitle.textContent = item.playTitle || libraryDisplayTitle(item);
   els.fullscreenMeta.textContent = meta;
   els.fullscreenStatus.textContent = "Loading...";
@@ -705,7 +709,7 @@ function openFullscreenPlayer(item) {
 function minimizeFullscreenPlayer() {
   if (!isFullscreenPlayerOpen()) return;
   if (state.section === "live" && state.activeChannel && state.activeChannelIndex >= 0 && !state.activeSeriesItem) {
-    closeFullscreenPlayer();
+    closeFullscreenPlayer({ resumeLive: false });
     return;
   }
   if (document.fullscreenElement) {
@@ -716,9 +720,15 @@ function minimizeFullscreenPlayer() {
   showFullscreenControls();
 }
 
-function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
+function closeFullscreenPlayer({ exitFullscreen = true, resumeLive = true } = {}) {
   if (!isFullscreenPlayerOpen()) return;
-  const resumeLive = state.section === "live" && state.activeChannel && state.activeChannelIndex >= 0 && !state.activeSeriesItem;
+  const shouldReloadLive =
+    resumeLive &&
+    state.section === "live" &&
+    state.activeChannel &&
+    state.activeChannelIndex >= 0 &&
+    !state.activeSeriesItem &&
+    state.fullscreenMode !== "live";
   window.clearTimeout(state.fullscreenControlsTimer);
   state.fullscreenControlsTimer = null;
   hideNextEpisodePrompt();
@@ -727,11 +737,19 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
   state.nextEpisode = null;
   state.nextPromptShown = false;
   els.playerOptionsPanel.classList.add("is-hidden");
-  clearPlayer();
+  if (state.fullscreenMode === "live" && state.liveVideoPlaceholder?.parentNode) {
+    state.liveVideoPlaceholder.parentNode.insertBefore(els.videoPlayer, state.liveVideoPlaceholder);
+    state.liveVideoPlaceholder.remove();
+  } else {
+    clearPlayer();
+  }
+  state.liveVideoPlaceholder = null;
   els.fullscreenPlayer.classList.add("is-hidden");
   els.fullscreenPlayer.classList.remove("is-windowed");
   els.fullscreenPlayer.classList.remove("is-controls-visible");
+  els.fullscreenVideoPlayer.classList.remove("is-hidden");
   state.playbackVideo = els.videoPlayer;
+  state.fullscreenMode = "";
   placePlayerOptionsPanel();
   els.fullscreenStatus.textContent = "Loading...";
   els.fullscreenStatus.classList.remove("is-hidden");
@@ -740,7 +758,7 @@ function closeFullscreenPlayer({ exitFullscreen = true } = {}) {
     document.exitFullscreen().catch(() => {});
   }
 
-  if (resumeLive) {
+  if (shouldReloadLive) {
     loadActiveChannelStream();
     renderChannels({ preserveScroll: true });
   }
@@ -1257,13 +1275,27 @@ function loadActiveChannelStream() {
 
 function openLiveFullscreen() {
   if (!state.activeChannel || state.activeChannelIndex < 0) return false;
-  openFullscreenPlayer({
-    playTitle: state.activeChannel.name,
-    category: state.activeChannel.category || "Live TV",
-  });
-  state.triedFallback = false;
-  state.pendingTsPreference = false;
-  loadActiveChannelStream();
+  state.fullscreenMode = "live";
+  state.playbackVideo = els.videoPlayer;
+  els.fullscreenTitle.textContent = state.activeChannel.name;
+  els.fullscreenMeta.textContent = state.activeChannel.category || "Live TV";
+  els.fullscreenStatus.textContent = els.nowTime.textContent || "Playing.";
+  els.fullscreenStatus.classList.toggle("is-hidden", els.fullscreenStatus.textContent === "Playing.");
+  els.playerOptionsPanel.classList.add("is-hidden");
+  applyVideoFit();
+  els.fullscreenPlayer.classList.remove("is-windowed");
+  els.fullscreenVideoPlayer.classList.add("is-hidden");
+  state.liveVideoPlaceholder = document.createComment("greenstreem-live-video");
+  els.videoPlayer.parentNode.insertBefore(state.liveVideoPlaceholder, els.videoPlayer);
+  els.fullscreenPlayer.insertBefore(els.videoPlayer, els.fullscreenPlayer.firstChild);
+  els.fullscreenPlayer.classList.remove("is-hidden");
+  els.fullscreenPlayer.focus();
+  showFullscreenControls();
+
+  const requestFullscreen = els.fullscreenPlayer.requestFullscreen?.bind(els.fullscreenPlayer);
+  if (requestFullscreen) {
+    requestFullscreen().catch(() => {});
+  }
   return true;
 }
 
