@@ -694,7 +694,122 @@ def load_xtream_movie_details(session: Session, item_id: str) -> dict[str, str]:
     }
 
 
-def load_xtream_series_details(session: Session, item_id: str) -> dict[str, Any]:
+def normalize_series_title(value: str) -> str:
+    normalized = (value or "").lower().replace("&", "and")
+    normalized = re.sub(r"^\[[^]]+]\s*", "", normalized)
+    normalized = re.sub(r"\(\d{4}\)", "", normalized)
+    normalized = re.sub(r"\b\d{4}\b", "", normalized)
+    normalized = re.sub(r"(?i)\bS\s*\d{1,3}\s*E\s*\d{1,3}.*$", "", normalized)
+    normalized = re.sub(r"(?i)\bSeason\s*\d{1,3}.*$", "", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return normalized.strip()
+
+
+def singularize_title(value: str) -> str:
+    return " ".join(word[:-1] if len(word) > 3 and word.endswith("s") else word for word in value.split()).strip()
+
+
+def matches_series_title(candidate: str, target: str) -> bool:
+    clean_candidate = normalize_series_title(candidate)
+    clean_target = normalize_series_title(target)
+    if not clean_candidate or not clean_target:
+        return False
+    if clean_candidate == clean_target:
+        return True
+    if clean_candidate in clean_target or clean_target in clean_candidate:
+        return True
+    return singularize_title(clean_candidate) == singularize_title(clean_target)
+
+
+def parse_series_episode_name(raw_name: str) -> tuple[str, int, int, str] | None:
+    name = (raw_name or "").strip()
+    if not name:
+        return None
+    match = (
+        re.search(r"(?i)\bS\s*(\d{1,3})\s*E\s*(\d{1,3})\b", name)
+        or re.search(r"(?i)\bSeason\s*(\d{1,3}).*?\bEpisode\s*(\d{1,3})\b", name)
+        or re.search(r"(?i)\b(\d{1,3})x(\d{1,3})\b", name)
+    )
+    if not match:
+        return None
+    season = int(match.group(1))
+    episode = int(match.group(2))
+    series_title = name[: match.start()].strip(" -:|") or name
+    episode_title = name[match.end() :].strip(" -:|") or f"Episode {episode}"
+    return series_title, season, episode, episode_title
+
+
+def has_episode_pattern(name: str) -> bool:
+    return bool(
+        re.search(r"(?i)\bS\s*\d{1,3}\s*E\s*\d{1,3}\b", name or "")
+        or re.search(r"(?i)\bSeason\s*\d{1,3}.*?\bEpisode\s*\d{1,3}\b", name or "")
+        or re.search(r"(?i)\b\d{1,3}x\d{1,3}\b", name or "")
+    )
+
+
+def fallback_episode_from_m3u_entry(name: str, stream_url: str, target_title: str) -> dict[str, str] | None:
+    if "/series/" not in stream_url.lower() and not has_episode_pattern(name):
+        return None
+    parsed = parse_series_episode_name(name)
+    if not parsed:
+        return None
+    series_title, season, episode, episode_title = parsed
+    if not matches_series_title(series_title, target_title):
+        return None
+
+    clean_url = stream_url.split("?", 1)[0]
+    last_segment = clean_url.rsplit("/", 1)[-1]
+    stream_id = last_segment.rsplit(".", 1)[0] or str(abs(hash(clean_url)))
+    container = last_segment.rsplit(".", 1)[-1] if "." in last_segment else "mp4"
+    return {
+        "id": stream_id,
+        "title": episode_title,
+        "episodeNum": str(episode),
+        "season": str(season),
+        "container": re.sub(r"[^A-Za-z0-9]", "", container) or "mp4",
+        "plot": "",
+    }
+
+
+def load_series_episodes_from_m3u(session: Session, show_name: str) -> dict[str, list[dict[str, str]]]:
+    base_url = session.credentials.get("serverUrl", "")
+    username = session.credentials.get("username", "")
+    password = session.credentials.get("password", "")
+    target = normalize_series_title(show_name)
+    if not base_url or not username or not password or not target:
+        return {}
+
+    grouped: dict[str, list[dict[str, str]]] = {}
+    pending_name = ""
+    url = m3u_api_url(base_url, username, password)
+    with open_provider_url(url, provider_headers(url), session) as response:
+        while True:
+            raw_line = response.readline()
+            if not raw_line:
+                break
+            value = raw_line.decode("utf-8", errors="replace").strip()
+            if value.lower().startswith("#extinf:"):
+                pending_name = value.rsplit(",", 1)[-1].strip()
+                continue
+            if not pending_name or not re.match(r"(?i)^(https?|rtmps?|rtsp|udp)://", value):
+                continue
+            episode = fallback_episode_from_m3u_entry(pending_name, value, target)
+            pending_name = ""
+            if not episode:
+                continue
+            season_key = episode.get("season") or "1"
+            episodes = grouped.setdefault(season_key, [])
+            if not any(existing.get("id") == episode.get("id") for existing in episodes):
+                episodes.append(episode)
+            if len(grouped) >= 40 and sum(len(items) for items in grouped.values()) >= 900:
+                break
+
+    for episodes in grouped.values():
+        episodes.sort(key=lambda episode: (int(episode["season"]) if str(episode.get("season", "")).isdigit() else 999, int(episode["episodeNum"]) if str(episode.get("episodeNum", "")).isdigit() else 999, episode.get("title", "")))
+    return grouped
+
+
+def load_xtream_series_details(session: Session, item_id: str, item_title: str = "") -> dict[str, Any]:
     base_url = session.credentials.get("serverUrl", "")
     username = session.credentials.get("username", "")
     password = session.credentials.get("password", "")
@@ -817,6 +932,18 @@ def load_xtream_series_details(session: Session, item_id: str) -> dict[str, Any]
         episodes.sort(key=lambda episode: int(episode["episodeNum"]) if str(episode.get("episodeNum", "")).isdigit() else str(episode.get("title", "")))
         seasons.append({"season": str(season_key), "label": "Episodes" if str(season_key) == "0" else f"Season {season_key}", "episodes": episodes})
 
+    fallback_used = False
+    target_title = first_text(item_title, info.get("name"), info.get("title"), info.get("series_name"))
+    if not seasons and target_title:
+        fallback_grouped = load_series_episodes_from_m3u(session, target_title)
+        fallback_has_real_season = any(key.isdigit() and int(key) > 0 for key in fallback_grouped.keys())
+        for season_key in sorted(fallback_grouped.keys(), key=lambda value: int(value) if str(value).isdigit() else str(value)):
+            if fallback_has_real_season and str(season_key) == "0":
+                continue
+            episodes = fallback_grouped[season_key]
+            seasons.append({"season": str(season_key), "label": "Episodes" if str(season_key) == "0" else f"Season {season_key}", "episodes": episodes})
+        fallback_used = bool(seasons)
+
     return {
         "plot": first_text(info.get("plot"), info.get("description"), info.get("overview")),
         "rating": first_text(info.get("rating")),
@@ -825,7 +952,7 @@ def load_xtream_series_details(session: Session, item_id: str) -> dict[str, Any]
         "duration": first_text(info.get("duration")),
         "poster": first_text(info.get("cover"), info.get("cover_big"), info.get("movie_image")),
         "seasons": seasons,
-        "debugFields": ",".join(sorted(set(info.keys()))),
+        "debugFields": ",".join(sorted(set(info.keys()) | ({"m3u_fallback"} if fallback_used else set()))),
     }
 
 
@@ -1207,6 +1334,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         session_id = params.get("session", [""])[0]
         media_type = params.get("type", [""])[0]
         item_id = params.get("id", [""])[0]
+        item_title = params.get("title", [""])[0]
         session = get_session(session_id)
         if not session:
             self.write_json({"error": "Session expired."}, HTTPStatus.NOT_FOUND)
@@ -1218,7 +1346,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             if media_type == "movies":
                 details = load_xtream_movie_details(session, item_id)
             elif media_type == "series":
-                details = load_xtream_series_details(session, item_id)
+                details = load_xtream_series_details(session, item_id, item_title)
             else:
                 details = {}
             self.write_json({"details": details})

@@ -614,7 +614,7 @@ async function loadItemDetails(item) {
 
   try {
     const response = await fetch(
-      `/api/item?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`,
+      `/api/item?session=${encodeURIComponent(state.sessionId)}&type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}&title=${encodeURIComponent(libraryDisplayTitle(item))}`,
     );
     const result = await readApiJson(response, "Details failed to load.");
     const details = result.details || {};
