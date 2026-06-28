@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from io import StringIO
@@ -324,6 +325,11 @@ def account_api_url(base_url: str, username: str, password: str) -> str:
 def m3u_api_url(base_url: str, username: str, password: str) -> str:
     query = urlencode({"username": username, "password": password, "type": "m3u_plus", "output": "ts"})
     return f"{base_url}/get.php?{query}"
+
+
+def safe_download_filename(value: str, fallback: str = "greenstreem-download") -> str:
+    name = re.sub(r"[\r\n/\\<>:\"|?*\x00-\x1f]+", " ", value or "").strip(" .")
+    return re.sub(r"\s+", " ", name)[:160] or fallback
 
 
 def alternate_scheme_url(base_url: str) -> str:
@@ -1109,6 +1115,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/vod":
             self.handle_vod(parsed.query)
             return
+        if parsed.path == "/api/season-download":
+            self.handle_season_download(parsed.query)
+            return
         self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -1489,6 +1498,73 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             record_diagnostic(session_id, "vod-error", stream_url, details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def handle_season_download(self, query: str) -> None:
+        params = parse_qs(query)
+        session_id = params.get("session", [""])[0]
+        series_id = params.get("series", [""])[0]
+        season_key = params.get("season", [""])[0]
+        series_title = params.get("title", ["Series"])[0]
+        session = get_session(session_id)
+        if not session:
+            self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
+            return
+        if not has_xtream_credentials(session):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Season download requires Xtream login.")
+            return
+
+        details = load_xtream_series_details(session, series_id, series_title)
+        seasons = details.get("seasons") if isinstance(details, dict) else []
+        if not isinstance(seasons, list):
+            seasons = []
+        selected = next((season for season in seasons if str(season.get("season")) == str(season_key)), None)
+        if not selected:
+            self.send_error(HTTPStatus.NOT_FOUND, "Season not found.")
+            return
+        episodes = [episode for episode in selected.get("episodes", []) if isinstance(episode, dict) and episode.get("id")]
+        if not episodes:
+            self.send_error(HTTPStatus.NOT_FOUND, "No episodes found for season.")
+            return
+
+        base_url = session.credentials.get("serverUrl", "")
+        username = session.credentials.get("username", "")
+        password = session.credentials.get("password", "")
+        if not base_url or not username or not password:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Missing VOD details.")
+            return
+
+        season_label = str(selected.get("label") or f"Season {season_key}")
+        zip_name = safe_download_filename(f"{series_title} - {season_label}", "greenstreem-season") + ".zip"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(zip_name)}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+        try:
+            with zipfile.ZipFile(self.wfile, "w", compression=zipfile.ZIP_STORED) as archive:
+                for index, episode in enumerate(episodes, start=1):
+                    episode_id = str(episode.get("id") or "")
+                    safe_ext = re.sub(r"[^A-Za-z0-9]", "", str(episode.get("container") or "mp4")) or "mp4"
+                    episode_num = str(episode.get("episodeNum") or index).zfill(2)
+                    episode_title = safe_download_filename(str(episode.get("title") or f"Episode {episode_num}"), f"Episode {episode_num}")
+                    member_name = f"{episode_num} - {episode_title}.{safe_ext}"
+                    stream_url = f"{base_url}/series/{quote(username)}/{quote(password)}/{quote(episode_id)}.{safe_ext}"
+                    headers = provider_headers(stream_url)
+                    with open_provider_url(stream_url, headers, session, timeout=45) as response:
+                        info = zipfile.ZipInfo(member_name)
+                        info.compress_type = zipfile.ZIP_STORED
+                        with archive.open(info, "w") as target:
+                            while True:
+                                chunk = response.read(64 * 1024)
+                                if not chunk:
+                                    break
+                                target.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:
+            record_diagnostic(session_id, "season-download-error", details=str(exc))
+            print(f"Season download failed series={series_id} season={season_key}: {exc}", flush=True)
 
     def is_hls_playlist(self, url: str, content_type: str) -> bool:
         lower_type = content_type.lower()

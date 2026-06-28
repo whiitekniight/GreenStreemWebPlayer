@@ -482,10 +482,15 @@ function downloadEpisode(series, season, episode, index) {
 }
 
 function downloadSeason(series, season) {
-  const episodes = (season?.episodes || []).filter((episode) => episode?.id);
-  episodes.forEach((episode, index) => {
-    window.setTimeout(() => downloadEpisode(series, season, episode, index), index * 450);
-  });
+  if (!season || !state.sessionId || !series?.id) return;
+  const link = document.createElement("a");
+  const name = safeDownloadName(`${libraryDisplayTitle(series)} - ${season.label || `Season ${season.season || ""}`.trim()}`);
+  link.href = `/api/season-download?session=${encodeURIComponent(state.sessionId)}&series=${encodeURIComponent(series.id)}&season=${encodeURIComponent(season.season || "")}&title=${encodeURIComponent(libraryDisplayTitle(series))}&name=${encodeURIComponent(name)}`;
+  link.download = "";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function shortEpisodeLabel(series, season, episode, index) {
