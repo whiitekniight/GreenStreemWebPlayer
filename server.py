@@ -35,6 +35,8 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 ROOT = Path(__file__).resolve().parent
 MAX_PLAYLIST_BYTES = 25 * 1024 * 1024
 MAX_EPG_BYTES = 120 * 1024 * 1024
+SERIES_FALLBACK_READ_TIMEOUT_SECONDS = 45
+SERIES_FALLBACK_SCAN_LIMIT_SECONDS = 45
 DEFAULT_HOST = os.environ.get("GREENSTREEM_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PORT") or os.environ.get("GREENSTREEM_PORT", "8097"))
 DEFAULT_SERVER_URL_RAW = os.environ.get(
@@ -805,9 +807,10 @@ def load_series_episodes_from_m3u(session: Session, show_name: str) -> dict[str,
     started_at = time.time()
     line_count = 0
     extinf_count = 0
-    with open_provider_url(url, provider_headers(url), session, timeout=8) as response:
+    print(f"Series M3U fallback start show={show_name!r}", flush=True)
+    with open_provider_url(url, provider_headers(url), session, timeout=SERIES_FALLBACK_READ_TIMEOUT_SECONDS) as response:
         while True:
-            if time.time() - started_at > 12:
+            if time.time() - started_at > SERIES_FALLBACK_SCAN_LIMIT_SECONDS:
                 print(
                     f"Series M3U fallback timed out show={show_name!r} lines={line_count} "
                     f"extinf={extinf_count} matches={sum(len(items) for items in grouped.values())}",
