@@ -717,34 +717,105 @@ def load_xtream_series_details(session: Session, item_id: str) -> dict[str, Any]
                 return text
         return ""
 
+    def first_int(*values: Any) -> int | None:
+        for value in values:
+            if value is None:
+                continue
+            try:
+                return int(str(value).strip())
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def looks_like_episode(value: dict[str, Any]) -> bool:
+        return bool(first_text(value.get("id"), value.get("stream_id"), value.get("episode_id"), value.get("movie_id"))) and bool(
+            first_text(value.get("title"), value.get("name"), value.get("episode_title"))
+            or value.get("episode_num") is not None
+            or value.get("episode") is not None
+            or value.get("episode_number") is not None
+        )
+
+    grouped: dict[str, list[dict[str, str]]] = {}
+
+    def add_episode(episode: dict[str, Any], fallback_season: str | None) -> None:
+        episode_info = episode.get("info") if isinstance(episode.get("info"), dict) else {}
+        episode_id = first_text(episode.get("id"), episode.get("stream_id"), episode.get("episode_id"), episode.get("movie_id"))
+        if not episode_id:
+            return
+        episode_num = first_text(
+            episode.get("episode_num"),
+            episode.get("episode"),
+            episode.get("episode_number"),
+            episode.get("num"),
+            episode_info.get("episode_num"),
+            episode_info.get("episode"),
+            episode_info.get("episode_number"),
+        )
+        season_number = first_int(
+            episode.get("season"),
+            episode.get("season_number"),
+            episode_info.get("season"),
+            episode_info.get("season_number"),
+            fallback_season,
+        )
+        season_key = str(season_number) if season_number is not None else str(fallback_season or "1")
+        episodes = grouped.setdefault(season_key, [])
+        episodes.append(
+            {
+                "id": episode_id,
+                "title": first_text(
+                    episode.get("title"),
+                    episode.get("name"),
+                    episode.get("episode_title"),
+                    episode_info.get("title"),
+                    episode_info.get("name"),
+                    episode_info.get("episode_title"),
+                    f"Episode {len(episodes) + 1}",
+                ),
+                "episodeNum": episode_num or str(len(episodes) + 1),
+                "season": season_key,
+                "container": first_text(
+                    episode.get("container_extension"),
+                    episode.get("containerExtension"),
+                    episode.get("extension"),
+                    episode_info.get("container_extension"),
+                    episode_info.get("containerExtension"),
+                    episode_info.get("extension"),
+                    "mp4",
+                ),
+                "plot": first_text(
+                    episode.get("plot"),
+                    episode.get("description"),
+                    episode_info.get("plot"),
+                    episode_info.get("description"),
+                ),
+            }
+        )
+
+    def collect_episodes(value: Any, fallback_season: str | None = None) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect_episodes(item, fallback_season)
+            return
+        if not isinstance(value, dict):
+            return
+        if looks_like_episode(value):
+            add_episode(value, fallback_season)
+            return
+        for key, nested in value.items():
+            next_season = str(key) if str(key).isdigit() else fallback_season
+            collect_episodes(nested, next_season)
+
+    collect_episodes(episodes_by_season)
+
+    has_real_season = any(key.isdigit() and int(key) > 0 for key in grouped.keys())
     seasons: list[dict[str, Any]] = []
-    for season_key in sorted(episodes_by_season.keys(), key=lambda value: int(value) if str(value).isdigit() else str(value)):
-        raw_episodes = episodes_by_season.get(season_key)
-        if not isinstance(raw_episodes, list):
+    for season_key in sorted(grouped.keys(), key=lambda value: int(value) if str(value).isdigit() else str(value)):
+        if has_real_season and str(season_key) == "0":
             continue
-
-        episodes: list[dict[str, str]] = []
-        for episode in raw_episodes:
-            if not isinstance(episode, dict):
-                continue
-
-            episode_id = first_text(episode.get("id"), episode.get("stream_id"), episode.get("episode_id"))
-            if not episode_id:
-                continue
-
-            episode_info = episode.get("info") if isinstance(episode.get("info"), dict) else {}
-            episodes.append(
-                {
-                    "id": episode_id,
-                    "title": first_text(episode.get("title"), episode.get("name"), episode_info.get("name"), f"Episode {len(episodes) + 1}"),
-                    "episodeNum": first_text(episode.get("episode_num"), episode.get("episode"), episode_info.get("episode_num")),
-                    "season": str(season_key),
-                    "container": first_text(episode.get("container_extension"), episode_info.get("container_extension"), "mp4"),
-                    "plot": first_text(episode.get("plot"), episode.get("description"), episode_info.get("plot"), episode_info.get("description")),
-                }
-            )
-
-        seasons.append({"season": str(season_key), "episodes": episodes})
+        episodes = grouped[season_key]
+        episodes.sort(key=lambda episode: int(episode["episodeNum"]) if str(episode.get("episodeNum", "")).isdigit() else str(episode.get("title", "")))
+        seasons.append({"season": str(season_key), "label": "Episodes" if str(season_key) == "0" else f"Season {season_key}", "episodes": episodes})
 
     return {
         "plot": first_text(info.get("plot"), info.get("description"), info.get("overview")),

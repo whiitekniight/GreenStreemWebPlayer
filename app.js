@@ -543,7 +543,11 @@ function renderSeriesEpisodes(item) {
   els.seriesEpisodes.replaceChildren();
 
   if (!item.seasons) {
-    els.seriesEpisodes.classList.add("is-hidden");
+    const loading = document.createElement("p");
+    loading.className = "muted-copy";
+    loading.textContent = "Loading episodes...";
+    els.seriesEpisodes.appendChild(loading);
+    els.seriesEpisodes.classList.remove("is-hidden");
     return;
   }
 
@@ -556,23 +560,25 @@ function renderSeriesEpisodes(item) {
     return;
   }
 
-  const availableSeasons = item.seasons.filter((season) => (season.episodes || []).length);
-  const selectedSeason = item.selectedSeason || availableSeasons[0]?.season || item.seasons[0]?.season || "";
+  const hasNumberedSeason = item.seasons.some((season) => Number(season.season) > 0);
+  const displaySeasons = hasNumberedSeason ? item.seasons.filter((season) => String(season.season) !== "0") : item.seasons;
+  const availableSeasons = displaySeasons.filter((season) => (season.episodes || []).length);
+  const selectedSeason = item.selectedSeason || availableSeasons[0]?.season || displaySeasons[0]?.season || "";
   item.selectedSeason = selectedSeason;
 
   const heading = document.createElement("h3");
   heading.className = "series-heading";
-  heading.textContent = "Seasons";
+  heading.textContent = displaySeasons.length === 1 && String(displaySeasons[0]?.season) === "0" ? "Episodes" : "Seasons";
 
   const tabs = document.createElement("div");
   tabs.className = "season-tabs";
 
-  item.seasons.forEach((season) => {
+  displaySeasons.forEach((season) => {
     const tab = document.createElement("button");
     tab.className = "season-tab";
     tab.classList.toggle("is-active", String(season.season) === String(selectedSeason));
     tab.type = "button";
-    tab.textContent = `Season ${season.season || ""}`.trim();
+    tab.textContent = season.label || (String(season.season) === "0" ? "Episodes" : `Season ${season.season || ""}`.trim());
     tab.addEventListener("click", () => {
       item.selectedSeason = season.season;
       renderSeriesEpisodes(item);
@@ -580,7 +586,7 @@ function renderSeriesEpisodes(item) {
     tabs.appendChild(tab);
   });
 
-  const selected = item.seasons.find((season) => String(season.season) === String(item.selectedSeason)) || item.seasons[0];
+  const selected = displaySeasons.find((season) => String(season.season) === String(item.selectedSeason)) || displaySeasons[0];
   const list = document.createElement("div");
   list.className = "episode-list";
 
