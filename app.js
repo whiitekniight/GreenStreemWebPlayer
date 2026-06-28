@@ -481,18 +481,6 @@ function downloadEpisode(series, season, episode, index) {
   link.remove();
 }
 
-function downloadSeason(series, season) {
-  if (!season || !state.sessionId || !series?.id) return;
-  const link = document.createElement("a");
-  const name = safeDownloadName(`${libraryDisplayTitle(series)} - ${season.label || `Season ${season.season || ""}`.trim()}`);
-  link.href = `/api/season-download?session=${encodeURIComponent(state.sessionId)}&series=${encodeURIComponent(series.id)}&season=${encodeURIComponent(season.season || "")}&title=${encodeURIComponent(libraryDisplayTitle(series))}&name=${encodeURIComponent(name)}`;
-  link.download = "";
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
 function shortEpisodeLabel(series, season, episode, index) {
   const episodeNumber = episode.episodeNum || index + 1;
   const code = seasonEpisodeCode(season, episode);
@@ -625,16 +613,6 @@ function renderSeriesEpisodes(item) {
   });
 
   const selected = displaySeasons.find((season) => String(season.season) === String(item.selectedSeason)) || displaySeasons[0];
-  const actions = document.createElement("div");
-  actions.className = "season-actions";
-  const downloadSeasonButton = document.createElement("button");
-  downloadSeasonButton.className = "season-download-button";
-  downloadSeasonButton.type = "button";
-  downloadSeasonButton.textContent = "Download Season";
-  downloadSeasonButton.disabled = !(selected?.episodes || []).some((episode) => episode?.id);
-  downloadSeasonButton.addEventListener("click", () => downloadSeason(item, selected));
-  actions.appendChild(downloadSeasonButton);
-
   const list = document.createElement("div");
   list.className = "episode-list";
 
@@ -665,7 +643,7 @@ function renderSeriesEpisodes(item) {
     list.appendChild(row);
   });
 
-  els.seriesEpisodes.append(heading, tabs, actions, list);
+  els.seriesEpisodes.append(heading, tabs, list);
   els.seriesEpisodes.classList.remove("is-hidden");
 }
 

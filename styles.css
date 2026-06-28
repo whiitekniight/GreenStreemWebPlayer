@@ -729,24 +729,12 @@ video {
   gap: 4px;
 }
 
-.season-actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.season-download-button,
 .episode-download-button {
   border: 1px solid rgba(180, 230, 255, 0.38);
   border-radius: 6px;
   color: #e9fbff;
   background: rgba(8, 22, 32, 0.46);
   font-weight: 900;
-}
-
-.season-download-button {
-  min-height: 34px;
-  padding: 0 12px;
-  font-size: 13px;
 }
 
 .episode-row {
@@ -796,8 +784,6 @@ video {
 
 .episode-button:hover,
 .episode-button:focus,
-.season-download-button:hover,
-.season-download-button:focus,
 .episode-download-button:hover,
 .episode-download-button:focus {
   border-color: var(--green);
@@ -810,8 +796,6 @@ video {
   background: linear-gradient(180deg, #27d8ff, #067dda);
 }
 
-.item-modal.is-series-modal .season-download-button:hover,
-.item-modal.is-series-modal .season-download-button:focus,
 .item-modal.is-series-modal .episode-download-button:hover,
 .item-modal.is-series-modal .episode-download-button:focus {
   border-color: rgba(234, 255, 255, 0.92);
