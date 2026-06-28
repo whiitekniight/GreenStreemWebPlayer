@@ -1312,6 +1312,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         session_id: str = "",
         session: Session | None = None,
         referer_url: str | None = None,
+        download_filename: str = "",
     ) -> None:
         extra_headers: dict[str, str] = {}
         range_header = self.headers.get("Range")
@@ -1352,6 +1353,9 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Access-Control-Allow-Origin", "*")
+            if download_filename:
+                safe_name = re.sub(r"[\r\n/\\]+", "_", download_filename).strip(" .") or "greenstreem-download"
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(safe_name)}")
             for header in ("Content-Length", "Content-Range", "Accept-Ranges"):
                 value = response.headers.get(header)
                 if value:
@@ -1460,6 +1464,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         media_type = params.get("media", ["movies"])[0]
         item_id = params.get("id", [""])[0]
         extension = params.get("ext", ["mp4"])[0] or "mp4"
+        download_name = params.get("name", [""])[0] if params.get("download", [""])[0] == "1" else ""
         session = get_session(session_id)
         if not session:
             self.send_error(HTTPStatus.NOT_FOUND, "Session expired.")
@@ -1479,7 +1484,8 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         stream_path = "series" if media_type == "series" else "movie"
         stream_url = f"{base_url}/{stream_path}/{quote(username)}/{quote(password)}/{quote(item_id)}.{safe_ext}"
         try:
-            self.proxy_url(stream_url, session_id=session_id, session=session)
+            filename = f"{download_name}.{safe_ext}" if download_name and not download_name.lower().endswith(f".{safe_ext.lower()}") else download_name
+            self.proxy_url(stream_url, session_id=session_id, session=session, download_filename=filename)
         except Exception as exc:
             record_diagnostic(session_id, "vod-error", stream_url, details=str(exc))
             self.send_error(HTTPStatus.BAD_GATEWAY, str(exc))
