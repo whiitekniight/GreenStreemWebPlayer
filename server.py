@@ -646,6 +646,26 @@ def load_xtream_library(session: Session, media_type: str, selected_category: st
     }
 
 
+def find_xtream_series_title(session: Session, item_id: str) -> str:
+    base_url = session.credentials.get("serverUrl", "")
+    username = session.credentials.get("username", "")
+    password = session.credentials.get("password", "")
+    if not base_url or not username or not password or not item_id:
+        return ""
+
+    raw_items = fetch_json(xtream_api_url(base_url, username, password, "get_series"))
+    if not isinstance(raw_items, list):
+        return ""
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("series_id") or "") != str(item_id):
+            continue
+        return str(item.get("name") or item.get("title") or "").strip()
+    return ""
+
+
 def load_xtream_movie_details(session: Session, item_id: str) -> dict[str, str]:
     base_url = session.credentials.get("serverUrl", "")
     username = session.credentials.get("username", "")
@@ -934,6 +954,8 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
 
     fallback_used = False
     target_title = first_text(item_title, info.get("name"), info.get("title"), info.get("series_name"))
+    if not seasons and not target_title:
+        target_title = find_xtream_series_title(session, item_id)
     if not seasons and target_title:
         fallback_grouped = load_series_episodes_from_m3u(session, target_title)
         fallback_has_real_season = any(key.isdigit() and int(key) > 0 for key in fallback_grouped.keys())
@@ -1347,6 +1369,11 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
                 details = load_xtream_movie_details(session, item_id)
             elif media_type == "series":
                 details = load_xtream_series_details(session, item_id, item_title)
+                print(
+                    f"Series details request id={item_id} title_provided={bool(item_title)} "
+                    f"seasons={len(details.get('seasons') or [])}",
+                    flush=True,
+                )
             else:
                 details = {}
             self.write_json({"details": details})
