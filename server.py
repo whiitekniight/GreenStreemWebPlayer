@@ -862,8 +862,6 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
     episodes_by_season = data.get("episodes") if isinstance(data, dict) else {}
     if not isinstance(info, dict):
         info = {}
-    if not isinstance(episodes_by_season, dict):
-        episodes_by_season = {}
 
     def first_text(*values: Any) -> str:
         for value in values:
@@ -883,18 +881,46 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
         return None
 
     def looks_like_episode(value: dict[str, Any]) -> bool:
-        return bool(first_text(value.get("id"), value.get("stream_id"), value.get("episode_id"), value.get("movie_id"))) and bool(
-            first_text(value.get("title"), value.get("name"), value.get("episode_title"))
+        episode_info = value.get("info") if isinstance(value.get("info"), dict) else {}
+        return bool(
+            first_text(
+                value.get("id"),
+                value.get("stream_id"),
+                value.get("streamId"),
+                value.get("episode_id"),
+                value.get("episodeId"),
+                value.get("movie_id"),
+                value.get("movieId"),
+                episode_info.get("id"),
+                episode_info.get("stream_id"),
+                episode_info.get("episode_id"),
+            )
+        ) and bool(
+            first_text(value.get("title"), value.get("name"), value.get("episode_title"), episode_info.get("title"), episode_info.get("name"))
             or value.get("episode_num") is not None
             or value.get("episode") is not None
             or value.get("episode_number") is not None
+            or episode_info.get("episode_num") is not None
+            or episode_info.get("episode") is not None
+            or episode_info.get("episode_number") is not None
         )
 
     grouped: dict[str, list[dict[str, str]]] = {}
 
     def add_episode(episode: dict[str, Any], fallback_season: str | None) -> None:
         episode_info = episode.get("info") if isinstance(episode.get("info"), dict) else {}
-        episode_id = first_text(episode.get("id"), episode.get("stream_id"), episode.get("episode_id"), episode.get("movie_id"))
+        episode_id = first_text(
+            episode.get("id"),
+            episode.get("stream_id"),
+            episode.get("streamId"),
+            episode.get("episode_id"),
+            episode.get("episodeId"),
+            episode.get("movie_id"),
+            episode.get("movieId"),
+            episode_info.get("id"),
+            episode_info.get("stream_id"),
+            episode_info.get("episode_id"),
+        )
         if not episode_id:
             return
         episode_num = first_text(
@@ -902,15 +928,19 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
             episode.get("episode"),
             episode.get("episode_number"),
             episode.get("num"),
+            episode.get("episodeNumber"),
             episode_info.get("episode_num"),
             episode_info.get("episode"),
             episode_info.get("episode_number"),
+            episode_info.get("episodeNumber"),
         )
         season_number = first_int(
             episode.get("season"),
             episode.get("season_number"),
+            episode.get("seasonNumber"),
             episode_info.get("season"),
             episode_info.get("season_number"),
+            episode_info.get("seasonNumber"),
             fallback_season,
         )
         season_key = str(season_number) if season_number is not None else str(fallback_season or "1")
@@ -922,9 +952,11 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
                     episode.get("title"),
                     episode.get("name"),
                     episode.get("episode_title"),
+                    episode.get("episodeTitle"),
                     episode_info.get("title"),
                     episode_info.get("name"),
                     episode_info.get("episode_title"),
+                    episode_info.get("episodeTitle"),
                     f"Episode {len(episodes) + 1}",
                 ),
                 "episodeNum": episode_num or str(len(episodes) + 1),
@@ -933,9 +965,11 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
                     episode.get("container_extension"),
                     episode.get("containerExtension"),
                     episode.get("extension"),
+                    episode.get("container"),
                     episode_info.get("container_extension"),
                     episode_info.get("containerExtension"),
                     episode_info.get("extension"),
+                    episode_info.get("container"),
                     "mp4",
                 ),
                 "plot": first_text(
@@ -948,6 +982,14 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
         )
 
     def collect_episodes(value: Any, fallback_season: str | None = None) -> None:
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith(("{", "[")):
+                try:
+                    collect_episodes(json.loads(text), fallback_season)
+                except json.JSONDecodeError:
+                    return
+            return
         if isinstance(value, list):
             for item in value:
                 collect_episodes(item, fallback_season)
@@ -962,6 +1004,13 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
             collect_episodes(nested, next_season)
 
     collect_episodes(episodes_by_season)
+    if not grouped and isinstance(data, dict):
+        collect_episodes({key: value for key, value in data.items() if key != "info"})
+    print(
+        f"Series info parse id={item_id} episodes_type={type(episodes_by_season).__name__} "
+        f"groups={len(grouped)} episodes={sum(len(items) for items in grouped.values())}",
+        flush=True,
+    )
 
     has_real_season = any(key.isdigit() and int(key) > 0 for key in grouped.keys())
     seasons: list[dict[str, Any]] = []
