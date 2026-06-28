@@ -625,6 +625,10 @@ async function loadItemDetails(item) {
     }
   } catch {
     if (state.selectedLibraryItem === item) {
+      if (item.type === "series") {
+        item.seasons = [];
+        renderItemDetails(item);
+      }
       els.modalPlot.textContent = item.plot || "No description available.";
     }
   }

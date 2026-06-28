@@ -105,12 +105,12 @@ def fetch_json(url: str) -> Any:
         raise ValueError(f"Provider returned non-JSON data: {preview}") from exc
 
 
-def open_provider_url(url: str, headers: dict[str, str], session: Session | None = None):
+def open_provider_url(url: str, headers: dict[str, str], session: Session | None = None, timeout: int = 20):
     request = Request(url, headers=headers)
     if session:
         opener = build_opener(HTTPCookieProcessor(session.cookie_jar))
-        return opener.open(request, timeout=20)
-    return urlopen(request, timeout=20)
+        return opener.open(request, timeout=timeout)
+    return urlopen(request, timeout=timeout)
 
 
 def provider_headers(
@@ -802,13 +802,25 @@ def load_series_episodes_from_m3u(session: Session, show_name: str) -> dict[str,
     grouped: dict[str, list[dict[str, str]]] = {}
     pending_name = ""
     url = m3u_api_url(base_url, username, password)
-    with open_provider_url(url, provider_headers(url), session) as response:
+    started_at = time.time()
+    line_count = 0
+    extinf_count = 0
+    with open_provider_url(url, provider_headers(url), session, timeout=8) as response:
         while True:
+            if time.time() - started_at > 12:
+                print(
+                    f"Series M3U fallback timed out show={show_name!r} lines={line_count} "
+                    f"extinf={extinf_count} matches={sum(len(items) for items in grouped.values())}",
+                    flush=True,
+                )
+                break
             raw_line = response.readline()
             if not raw_line:
                 break
+            line_count += 1
             value = raw_line.decode("utf-8", errors="replace").strip()
             if value.lower().startswith("#extinf:"):
+                extinf_count += 1
                 pending_name = value.rsplit(",", 1)[-1].strip()
                 continue
             if not pending_name or not re.match(r"(?i)^(https?|rtmps?|rtsp|udp)://", value):
@@ -826,6 +838,11 @@ def load_series_episodes_from_m3u(session: Session, show_name: str) -> dict[str,
 
     for episodes in grouped.values():
         episodes.sort(key=lambda episode: (int(episode["season"]) if str(episode.get("season", "")).isdigit() else 999, int(episode["episodeNum"]) if str(episode.get("episodeNum", "")).isdigit() else 999, episode.get("title", "")))
+    print(
+        f"Series M3U fallback done show={show_name!r} lines={line_count} "
+        f"extinf={extinf_count} matches={sum(len(items) for items in grouped.values())}",
+        flush=True,
+    )
     return grouped
 
 
@@ -957,7 +974,11 @@ def load_xtream_series_details(session: Session, item_id: str, item_title: str =
     if not seasons and not target_title:
         target_title = find_xtream_series_title(session, item_id)
     if not seasons and target_title:
-        fallback_grouped = load_series_episodes_from_m3u(session, target_title)
+        try:
+            fallback_grouped = load_series_episodes_from_m3u(session, target_title)
+        except Exception as exc:
+            print(f"Series M3U fallback failed id={item_id} title={target_title!r}: {exc}", flush=True)
+            fallback_grouped = {}
         fallback_has_real_season = any(key.isdigit() and int(key) > 0 for key in fallback_grouped.keys())
         for season_key in sorted(fallback_grouped.keys(), key=lambda value: int(value) if str(value).isdigit() else str(value)):
             if fallback_has_real_season and str(season_key) == "0":
@@ -1349,6 +1370,7 @@ class GreenStreemHandler(BaseHTTPRequestHandler):
         try:
             self.write_json(load_xtream_library(session, media_type, selected_category))
         except Exception as exc:
+            print(f"Item details failed type={media_type} id={item_id}: {exc}", flush=True)
             self.write_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
 
     def handle_item(self, query: str) -> None:
